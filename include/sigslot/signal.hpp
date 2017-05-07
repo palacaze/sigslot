@@ -146,7 +146,7 @@ public:
     /**
      * Create a connection whose duration is tied to the return object
      *
-     * The three connection_scoped overloads do the same operations as three
+     * The three scoped_connection overloads do the same operations as the three
      * connect ones, except for the returned scoped_connection object, which
      * is a RAII object that disconnects the slot upon destruction.
      */
@@ -165,7 +165,7 @@ public:
     scoped_connection connect_scoped(Callable && c, Ptr p) {
         auto s = detail::make_slot(std::forward<Callable>(c), p);
         add_slot(s);
-        return connection_scoped(s);
+        return scoped_connection(s);
     }
 
     template <typename Callable, typename Ptr,
@@ -206,7 +206,7 @@ public:
      * tests blocking state of signal emission
      */
     bool blocked() const noexcept {
-        m_block.load();
+        return m_block.load();
     }
 
 private:
