@@ -6,6 +6,16 @@
 
 namespace pal {
 namespace traits {
+
+struct no_class;
+
+template <typename C, typename R, typename... A>
+struct signature {
+    using return_type = R;
+    using args_type = typelist<A...>;
+    using class_type = C;
+};
+
 namespace detail {
 
 // remove class, const and volatile parts of a member function signature
@@ -13,9 +23,10 @@ template<typename T> struct remove_class {
     using type = T;
 };
 
-#define REMOVE_CLASS(q)                                           \
-template <typename C, typename R, typename... A>                  \
-struct remove_class<R(C::*)(A...) q> { using type = R(A...); };
+#define REMOVE_CLASS(q)                             \
+template <typename C, typename R, typename... A>    \
+struct remove_class<R(C::*)(A...) q> {              \
+    using type = signature<C, R, A...>; };
 
 REMOVE_CLASS()
 REMOVE_CLASS(const)
@@ -33,14 +44,19 @@ struct get_sig_impl {
     using type = remove_class_t<std::decay_t<call_op>>;
 };
 
+template<typename... T>
+struct get_sig_impl<signature<T...>> {
+    using type = signature<T...>;
+};
+
 template <typename R, typename... A>
 struct get_sig_impl<R(A...)> {
-    using type = R(A...);
+    using type = signature<no_class, R, A...>;
 };
 
 template <typename R, typename... A>
 struct get_sig_impl<R(*)(A...)> {
-    using type = R(A...);
+    using type = signature<no_class, R, A...>;
 };
 
 template<typename F>
@@ -50,37 +66,23 @@ struct get_sig {
             std::decay_t<F>>>::type;
 };
 
-// get function arguments
-template <typename...>
-struct get_args {};
-
-template <typename R, typename... A>
-struct get_args<R(A...)> {
-    using type = typelist<A...>;
-};
-
-// get function return type
-template <typename...>
-struct get_ret {};
-
-template <typename R, typename... A>
-struct get_ret<R(A...)> {
-    using type = R;
-};
-
 } // namespace detail
 
-/// get the "canonical" form of a callable signature
+/// get the decomposed form (class, return and arguments) of a callable signature
 template <typename F>
 using sig_t = typename detail::get_sig<F>::type;
 
 /// get the arguments list of a callable
 template <typename F>
-using args_t = typename detail::get_args<sig_t<F>>::type;
+using args_t = typename sig_t<F>::args_type;
 
 /// get the return type of a callable
 template <typename F>
-using return_t = typename detail::get_ret<sig_t<F>>::type;
+using return_t = typename sig_t<F>::return_type;
+
+/// get the class type of a callable (no_class if not a class type)
+template <typename F>
+using class_t = typename sig_t<F>::class_type;
 
 } // namespace traits
 } // namespace pal

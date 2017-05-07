@@ -52,7 +52,17 @@ install(EXPORT PalSigslotConfig NAMESPACE Pal:: DESTINATION "${CMAKE_INSTALL_DAT
 if(COMPILE_EXAMPLES)
     # add_subdirectory(example)
 endif()
+
 if(COMPILE_TESTS)
+    # optional test of boost bridge with smart pointers
+    set(CMAKE_AUTOMOC ON)
+    find_package(Boost QUIET)
+
+    # optional test of Qt bridge
+    find_package(Qt5 COMPONENTS Core Widgets Gui QUIET)
+
+    find_package(Threads)
+
     enable_testing()
     add_subdirectory(test EXCLUDE_FROM_ALL)
 endif()

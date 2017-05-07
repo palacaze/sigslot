@@ -1,15 +1,36 @@
 add_custom_target(tests
-  COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-  COMMENT "Build and run all the unit tests.")
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+    COMMENT "Build and run all the unit tests.")
 
-file(GLOB_RECURSE UNIT_TESTS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*.cpp")
-foreach(ut IN LISTS UNIT_TESTS)
-    string(REPLACE ".cpp" "" target ${ut})
-    string(REGEX REPLACE "/" "." target ${target})
+macro(pal_create_test target ut)
     add_executable(${target} EXCLUDE_FROM_ALL "${ut}")
     add_test(${target} ${target})
     add_dependencies(tests ${target})
     target_link_libraries(${target} Pal::Sigslot)
     pal_set_properties(${target} PRIVATE)
+endmacro()
+
+file(GLOB_RECURSE UNIT_TESTS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*.cpp")
+foreach(ut IN LISTS UNIT_TESTS)
+    string(REPLACE ".cpp" "" target ${ut})
+    string(REGEX REPLACE "/" "." target ${target})
+
+    if (target MATCHES "boost")
+        if (Boost_FOUND)
+            pal_create_test(${target} "${ut}")
+        endif()
+    elseif (target MATCHES "qt")
+        if (Boost_FOUND)
+            pal_create_test(${target} "${ut}")
+            target_link_libraries(${target} Qt5::Core)
+        endif()
+    elseif (target MATCHES "thread")
+        pal_create_test(${target} "${ut}")
+        if (Threads_FOUND)
+            target_link_libraries(${target} Threads::Threads)
+        endif()
+    else()
+        pal_create_test(${target} "${ut}")
+    endif()
 endforeach()
 
