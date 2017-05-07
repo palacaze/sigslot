@@ -4,43 +4,48 @@
 #include <mutex>
 #include <atomic>
 #include "detail/slot.hpp"
+#include "detail/mutex.hpp"
 #include "detail/traits/pointer.hpp"
 #include "connection.hpp"
 
 namespace pal {
 
 /**
- * A signal is an implementation of the observer pattern, through the use of
- * an emitting object and slots that are connected to the signal and called
+ * signal_base is an implementation of the observer pattern, through the use
+ * of an emitting object and slots that are connected to the signal and called
  * with supplied arguments when a signal is emitted.
  *
- * pal::signal is a simple, thead-safe implementation, that does not allow
- * slots to return a value.
+ * pal::signal_base is the general implementation, whose locking policy must be
+ * set in order to decide thread safety guarantees. pal::signal and pal::signal_st
+ * are partial specializations for multi-threaded and single-threaded use.
  *
+ * It does not allow slots to return a value.
+ *
+ * @tparam Lockable a lock type to decide the lock policy
  * @tparam T... the argument types of the emitting and slots functions.
  */
-template <typename ...T>
-class signal {
-    using lock_type = std::unique_lock<std::mutex>;
+template <typename Lockable, typename... T>
+class signal_base {
+    using lock_type = std::unique_lock<Lockable>;
     using slot_ptr = detail::slot_ptr<T...>;
 
 public:
-    signal() noexcept : m_block(false) {}
-    ~signal() {
+    signal_base() noexcept : m_block(false) {}
+    ~signal_base() {
         disconnect_all();
     }
 
-    signal(const signal&) = delete;
-    signal & operator=(const signal&) = delete;
+    signal_base(const signal_base&) = delete;
+    signal_base & operator=(const signal_base&) = delete;
 
-    signal(signal && o)
+    signal_base(signal_base && o)
         : m_block{o.m_block.load()}
     {
         lock_type lock(o.m_mutex);
         std::swap(m_slots, o.m_slots);
     }
 
-    signal & operator=(signal && o) {
+    signal_base & operator=(signal_base && o) {
         lock_type lock1(m_mutex, std::defer_lock);
         lock_type lock2(o.m_mutex, std::defer_lock);
         std::lock(lock1, lock2);
@@ -51,15 +56,16 @@ public:
     }
 
     /**
-     * emit a signal
+     * Emit a signal
      *
-     * effect: all non blocked and connected slot functions will be called
+     * Effect: All non blocked and connected slot functions will be called
      *         with supplied arguments.
-     * safety: emission can happen from multiple threads. The guarantees
-     *         only apply to the signal object, it does not cover thread
-     *         safety of potentially shared state used in slot functions.
+     * Safety: With proper locking (see pal::signal), emission can happen from
+     *         multiple threads simulateously. The guarantees only apply to the
+     *         signal object, it does not cover thread safety of potentially
+     *         shared state used in slot functions.
      *
-     * @param a arguments to emit
+     * @param a... arguments to emit
      */
     template <typename... A>
     void operator()(A && ... a) {
@@ -85,11 +91,11 @@ public:
     }
 
     /**
-     * connect a callable of compatible arguments
+     * Connect a callable of compatible arguments
      *
-     * effect: creates a new slot, with will call the supplied callable for
+     * Effect: Creates a new slot, with will call the supplied callable for
      *         every subsequent signal emission.
-     * safety: thread safe
+     * Safety: Thread-safety depends on locking policy.
      *
      * @param c a callable
      * @return a connection object that can be used to interact with the slot
@@ -102,7 +108,7 @@ public:
     }
 
     /**
-     * overload of connect for pointers over member functions
+     * Overload of connect for pointers over member functions
      *
      * @param c a pointer over member function
      * @param p an object pointer
@@ -120,7 +126,7 @@ public:
     }
 
     /**
-     * overload of connect for lifetime object tracking
+     * Overload of connect for lifetime object tracking
      *
      * This overload allows automatic disconnection when the tracked object is
      * destroyed, it covers two cases:
@@ -144,7 +150,7 @@ public:
     }
 
     /**
-     * Create a connection whose duration is tied to the return object
+     * Creates a connection whose duration is tied to the return object
      *
      * The three scoped_connection overloads do the same operations as the three
      * connect ones, except for the returned scoped_connection object, which
@@ -178,8 +184,8 @@ public:
     }
 
     /**
-     * disconnects all the slots
-     * safety: thread safe
+     * Disconnects all the slots
+     * Safety: Thread safety depends on locking policy
      */
     void disconnect_all() {
         lock_type lock(m_mutex);
@@ -187,23 +193,23 @@ public:
     }
 
     /**
-     * blocks signal emission
-     * safety: thread safe
+     * Blocks signal emission
+     * Safety: thread safe
      */
     void block() noexcept {
         m_block.store(true);
     }
 
     /**
-     * unblocks signal emission
-     * safety: thread safe
+     * Unblocks signal emission
+     * Safety: thread safe
      */
     void unblock() noexcept {
         m_block.store(false);
     }
 
     /**
-     * tests blocking state of signal emission
+     * Tests blocking state of signal emission
      */
     bool blocked() const noexcept {
         return m_block.load();
@@ -228,9 +234,25 @@ private:
 
 private:
     slot_ptr m_slots;
-    std::mutex m_mutex;
+    Lockable m_mutex;
     std::atomic<bool> m_block;
 };
+
+/**
+ * Specialization of signal_base to be used in single threaded contexts.
+ * Slot connection, disconnection and signal emission are not thread-safe.
+ * The performance improvement over the thread-safe variant is not impressive,
+ * so this is not very useful.
+ */
+template <typename... T>
+using signal_st = signal_base<detail::null_mutex, T...>;
+
+/**
+ * Specialization of signal_base to be used in multi-threaded contexts.
+ * Slot connection, disconnection and signal emission are thread-safe.
+ */
+template <typename... T>
+using signal = signal_base<std::mutex, T...>;
 
 } // namespace pal
 

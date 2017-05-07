@@ -14,6 +14,27 @@ void emit_many(signal<int> &sig) {
         sig(1);
 }
 
+void connect_emit(signal<int> &sig) {
+    for (int i = 0; i < 100; ++i) {
+        auto s = sig.connect_scoped(f);
+        for (int j = 0; j < 100; ++j)
+            sig(1);
+    }
+}
+
+void test_threaded_mix() {
+    sum = 0;
+
+    signal<int> sig;
+
+    std::array<std::thread, 10> threads;
+    for (auto &t : threads)
+        t = std::thread(connect_emit, std::ref(sig));
+
+    for (auto &t : threads)
+        t.join();
+}
+
 void test_threaded_emission() {
     sum = 0;
 
@@ -32,6 +53,7 @@ void test_threaded_emission() {
 
 int main() {
     test_threaded_emission();
+    test_threaded_mix();
     return 0;
 }
 

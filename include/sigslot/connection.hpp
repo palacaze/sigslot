@@ -97,7 +97,7 @@ public:
     }
 
 protected:
-    template <typename... A> friend class signal;
+    template <typename, typename...> friend class signal_base;
     connection(std::weak_ptr<detail::slot_state> s) noexcept
         : m_state{std::move(s)}
     {}
@@ -131,7 +131,7 @@ public:
     }
 
 private:
-    template <typename... A> friend class signal;
+    template <typename, typename...> friend class signal_base;
     scoped_connection(std::weak_ptr<detail::slot_state> s) noexcept
         : connection{std::move(s)}
     {}
