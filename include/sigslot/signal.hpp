@@ -5,7 +5,7 @@
 #include <atomic>
 #include "detail/slot.hpp"
 #include "detail/mutex.hpp"
-#include "detail/traits/pointer.hpp"
+#include "detail/util.hpp"
 #include "connection.hpp"
 
 namespace pal {
@@ -28,6 +28,7 @@ template <typename Lockable, typename... T>
 class signal_base {
     using lock_type = std::unique_lock<Lockable>;
     using slot_ptr = detail::slot_ptr<T...>;
+    using arg_list = traits::typelist<T...>;
 
 public:
     signal_base() noexcept : m_block(false) {}
@@ -100,9 +101,11 @@ public:
      * @param c a callable
      * @return a connection object that can be used to interact with the slot
      */
-    template <typename Callable>
+    template <typename Callable,
+              std::enable_if_t<traits::is_callable_v<arg_list, Callable>>* = nullptr>
     connection connect(Callable && c) {
-        auto s = detail::make_slot(std::forward<Callable>(c));
+        using slot_t = detail::slot<Callable, arg_list>;
+        auto s = std::make_shared<slot_t>(std::forward<Callable>(c));
         add_slot(s);
         return connection(s);
     }
@@ -110,77 +113,94 @@ public:
     /**
      * Overload of connect for pointers over member functions
      *
-     * @param c a pointer over member function
-     * @param p an object pointer
+     * @param pmf a pointer over member function
+     * @param ptr an object pointer
      * @return a connection object that can be used to interact with the slot
      */
-    template <typename Callable, typename Ptr,
-              typename TC = traits::class_t<Callable>,
-              typename TP = std::remove_cv_t<std::remove_pointer_t<Ptr>>,
-              std::enable_if_t<!traits::is_weak_ptr_compatible_v<Ptr> &&
-                               std::is_same<TP, TC>::value>* = nullptr>
-    connection connect(Callable && c, Ptr p) {
-        auto s = detail::make_slot(std::forward<Callable>(c), p);
+    template <typename Pmf, typename Ptr,
+              std::enable_if_t<traits::is_callable_v<arg_list, Pmf, Ptr> &&
+                               !traits::is_weak_ptr_compatible_v<Ptr>>* = nullptr>
+    connection connect(Pmf && pmf, Ptr ptr) {
+        auto f = [=, pmf=std::forward<Pmf>(pmf)](auto && ...a) {
+            (ptr->*pmf)(std::forward<decltype(a)>(a)...);
+        };
+
+        using slot_t = detail::slot<decltype(f), arg_list>;
+        auto s = std::make_shared<slot_t>(std::move(f));
         add_slot(s);
         return connection(s);
     }
 
     /**
-     * Overload of connect for lifetime object tracking
+     * Overload of connect for lifetime object tracking and automatic disconnection
      *
-     * This overload allows automatic disconnection when the tracked object is
-     * destroyed, it covers two cases:
-     * - standalone callable and an object whose lifetime is trackable
-     * - a pointer over member function and a trackable pointer for the suitable class
+     * Ptr must be convertible to an object following a loose form of weak pointer
+     * concept, by implementing the ADL-detected conversion function to_weak().
      *
-     * In both cases the Ptr type must be convertible to an object following a
-     * loose form of weak pointer concept, by implementing the ADL-detected
-     * conversion function to_weak().
+     * This overload covers the case of a pointer over member function and a
+     * trackable pointer of that class.
      *
-     * Note: only weak reference are stored, a slot does not extend the lifetime
+     * Note: only weak references are stored, a slot does not extend the lifetime
      * of a suppied object.
+     *
+     * @param pmf a pointer over member function
+     * @param ptr a trackable object pointer
+     * @return a connection object that can be used to interact with the slot
      */
-    template <typename Callable, typename Ptr,
-              std::enable_if_t<traits::is_weak_ptr_compatible_v<Ptr>>* = nullptr>
-    connection connect(Callable && c, Ptr p) {
+    template <typename Pmf, typename Ptr,
+              std::enable_if_t<!traits::is_callable_v<arg_list, Pmf> &&
+                               traits::is_weak_ptr_compatible_v<Ptr>>* = nullptr>
+    connection connect(Pmf && pmf, Ptr ptr) {
         using traits::to_weak;
-        auto s = detail::make_slot_tracked(std::forward<Callable>(c), to_weak(p));
+        auto w = to_weak(ptr);
+
+        auto f = [=, pmf=std::forward<Pmf>(pmf)](auto && ...a) {
+            auto sp = w.lock();
+            if (sp)
+                ((*sp).*pmf)(std::forward<decltype(a)>(a)...);
+        };
+
+        using slot_t = detail::slot_tracked<decltype(f), decltype(w), arg_list>;
+        auto s = std::make_shared<slot_t>(std::move(f), w);
+        add_slot(s);
+        return connection(s);
+    }
+
+    /**
+     * Overload of connect for lifetime object tracking and automatic disconnection
+     *
+     * Trackable must be convertible to an object following a loose form of weak
+     * pointer concept, by implementing the ADL-detected conversion function to_weak().
+     *
+     * This overload covers the case of a standalone callable and unrelated trackable
+     * object.
+     *
+     * Note: only weak references are stored, a slot does not extend the lifetime
+     * of a suppied object.
+     *
+     * @param c a callable
+     * @param ptr a trackable object pointer
+     * @return a connection object that can be used to interact with the slot
+     */
+    template <typename Callable, typename Trackable,
+              std::enable_if_t<traits::is_callable_v<arg_list, Callable> &&
+                               traits::is_weak_ptr_compatible_v<Trackable>>* = nullptr>
+    connection connect(Callable && c, Trackable ptr) {
+        using traits::to_weak;
+        auto w = to_weak(ptr);
+        using slot_t = detail::slot_tracked<Callable, decltype(w), arg_list>;
+        auto s = std::make_shared<slot_t>(std::forward<Callable>(c), w);
         add_slot(s);
         return connection(s);
     }
 
     /**
      * Creates a connection whose duration is tied to the return object
-     *
-     * The three scoped_connection overloads do the same operations as the three
-     * connect ones, except for the returned scoped_connection object, which
-     * is a RAII object that disconnects the slot upon destruction.
+     * Use the same semantics as connect
      */
-    template <typename Callable>
-    scoped_connection connect_scoped(Callable && c) {
-        auto s = detail::make_slot(std::forward<Callable>(c));
-        add_slot(s);
-        return scoped_connection(s);
-    }
-
-    template <typename Callable, typename Ptr,
-              typename TC = traits::class_t<Callable>,
-              typename TP = std::remove_cv_t<std::remove_pointer_t<Ptr>>,
-              std::enable_if_t<!traits::is_weak_ptr_compatible_v<Ptr> &&
-                               std::is_same<TP, TC>::value>* = nullptr>
-    scoped_connection connect_scoped(Callable && c, Ptr p) {
-        auto s = detail::make_slot(std::forward<Callable>(c), p);
-        add_slot(s);
-        return scoped_connection(s);
-    }
-
-    template <typename Callable, typename Ptr,
-              std::enable_if_t<traits::is_weak_ptr_compatible_v<Ptr>>* = nullptr>
-    scoped_connection connect_scoped(Callable && c, Ptr p) {
-        using traits::to_weak;
-        auto s = detail::make_slot_tracked(std::forward<Callable>(c), to_weak(p));
-        add_slot(s);
-        return scoped_connection(s);
+    template <typename... CallArgs>
+    scoped_connection connect_scoped(CallArgs && ...args) {
+        return connect(std::forward<CallArgs>(args)...);
     }
 
     /**
@@ -218,11 +238,6 @@ public:
 private:
     template <typename S>
     void add_slot(S &s) {
-        using slot_args = typename S::element_type::base_types;
-        using sig_args = traits::typelist<T...>;
-        static_assert(std::is_same<slot_args, sig_args>::value,
-            "Attempt to connect a slot to a signal of incompatible argument types");
-
         lock_type lock(m_mutex);
         s->next = m_slots;
         m_slots = s;

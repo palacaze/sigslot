@@ -1,8 +1,6 @@
 #pragma once
-#include <type_traits>
 #include <boost/shared_ptr.hpp>
 #include <boost/weak_ptr.hpp>
-#include "../detail/traits/pointer.hpp"
 
 /**
  * Bring ADL conversion for boost smart pointers

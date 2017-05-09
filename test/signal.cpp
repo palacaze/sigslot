@@ -1,5 +1,8 @@
 #include <sigslot/signal.hpp>
+#include <string>
+#include <sstream>
 #include <cassert>
+#include <cmath>
 
 using namespace pal;
 
@@ -20,6 +23,11 @@ struct s {
     void f6(int i) const noexcept { sum += i; }
     void f7(int i) volatile noexcept { sum += i; }
     void f8(int i) const volatile noexcept { sum += i; }
+};
+
+struct oo {
+    void operator()(int i) { sum += i; }
+    void operator()(double i) { sum += std::round(4*i); }
 };
 
 struct o1 { void operator()(int i) { sum += i; } };
@@ -106,6 +114,20 @@ void test_function_object_connection() {
     assert(sum == 8);
 }
 
+void test_overloaded_function_object_connection() {
+    sum = 0;
+    signal<int> sig;
+    signal<double> sig1;
+
+    sig.connect(oo{});
+    sig(1);
+    assert(sum == 1);
+
+    sig1.connect(oo{});
+    sig1(1);
+    assert(sum == 5);
+}
+
 void test_lambda_connection() {
     sum = 0;
     signal<int> sig;
@@ -116,6 +138,44 @@ void test_lambda_connection() {
 
     sig.connect([&](int i) mutable { sum += 2*i; });
     sig(1);
+    assert(sum == 4);
+}
+
+void test_generic_lambda_connection() {
+    std::stringstream s;
+
+    auto f = [&] (auto a, auto ...args) {
+        using result_t = int[];
+        s << a;
+        result_t r{ 1, ((void)(s << args), 1)..., };
+        (void)r;
+    };
+
+    signal<int> sig1;
+    signal<std::string> sig2;
+    signal<double> sig3;
+
+    sig1.connect(f);
+    sig2.connect(f);
+    sig3.connect(f);
+    sig1(1);
+    sig2("foo");
+    sig3(4.1);
+
+    assert(s.str() == "1foo4.1");
+}
+
+void test_lvalue_emission() {
+    sum = 0;
+    signal<int> sig;
+
+    auto c1 = sig.connect(f1);
+    int v = 1;
+    sig(v);
+    assert(sum == 1);
+
+    sig.connect(f2);
+    sig(v);
     assert(sum == 4);
 }
 
@@ -130,6 +190,24 @@ void test_mutation() {
     sig.connect([](int &r) mutable { r += 2; });
     sig(res);
     assert(res == 4);
+}
+
+void test_compatible_args() {
+    long ll = 0;
+    std::string ss;
+    short ii = 0;
+
+    auto f = [&] (long l, const std::string &s, short i) {
+        ll = l; ss = s; ii = i;
+    };
+
+    signal<int, std::string, bool> sig;
+    sig.connect(f);
+    sig('0', "foo", true);
+
+    assert(ll == 48);
+    assert(ss == "foo");
+    assert(ii == 1);
 }
 
 void test_disconnection() {
@@ -345,13 +423,52 @@ void test_signal_moving() {
     assert(sum == 9);
 }
 
+template <typename T>
+struct object {
+    object();
+    object(T i) : v{i} {}
+
+    const T & val() const { return v; }
+    T & val() { return v; }
+    void set_val(const T &i) {
+        if (i != v) {
+            v = i;
+            s(i);
+        }
+    }
+
+    signal<T> & sig() { return s; }
+
+private:
+    T v;
+    signal<T> s;
+};
+
+void test_loop() {
+    object<int> i1(0);
+    object<int> i2(3);
+
+    i1.sig().connect(&object<int>::set_val, &i2);
+    i2.sig().connect(&object<int>::set_val, &i1);
+
+    i1.set_val(1);
+
+    assert(i1.val() == 1);
+    assert(i2.val() == 1);
+}
+
 int main() {
     test_free_connection();
     test_static_connection();
     test_pmf_connection();
     test_const_pmf_connection();
     test_function_object_connection();
+    test_overloaded_function_object_connection();
     test_lambda_connection();
+    test_generic_lambda_connection();
+    test_lvalue_emission();
+    test_compatible_args();
+    test_mutation();
     test_disconnection();
     test_scoped_connection();
     test_connection_blocker();
@@ -361,6 +478,7 @@ int main() {
     test_connection_copying_moving();
     test_scoped_connection_moving();
     test_signal_moving();
+    test_loop();
     return 0;
 }
 

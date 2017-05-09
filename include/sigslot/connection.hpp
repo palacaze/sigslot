@@ -117,6 +117,9 @@ public:
         disconnect();
     }
 
+    scoped_connection(const connection &c) noexcept : connection(c) {}
+    scoped_connection(connection &&c) noexcept : connection(std::move(c)) {}
+
     scoped_connection(const scoped_connection &) noexcept = delete;
     scoped_connection & operator=(const scoped_connection &) noexcept = delete;
 

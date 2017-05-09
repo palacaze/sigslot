@@ -4,7 +4,6 @@
 #include <QSharedPointer>
 #include <QPointer>
 #include <QObject>
-#include "../detail/traits/pointer.hpp"
 
 /**
  * Definition of a few adapters that allow object life tracking for QObject,

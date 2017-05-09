@@ -1,4 +1,7 @@
 #include <sigslot/signal.hpp>
+#include <string>
+#include <sstream>
+#include <cmath>
 #include <cassert>
 
 using namespace pal;
@@ -13,8 +16,14 @@ struct s {
     void f2(int i) const { sum += 2*i; }
 };
 
+struct oo {
+    void operator()(int i) { sum += i; }
+    void operator()(double i) { sum += std::round(4*i); }
+};
+
 struct dummy {};
 
+static_assert(traits::is_callable_v<traits::typelist<int>, decltype(&s::f1), std::shared_ptr<s>>, "");
 
 void test_track_shared() {
     sum = 0;
@@ -62,9 +71,67 @@ void test_track_other() {
     assert(sum == 5);
 }
 
+void test_track_overloaded_function_object() {
+    sum = 0;
+    signal<int> sig;
+    signal<double> sig1;
+
+    auto d1 = std::make_shared<dummy>();
+    sig.connect(oo{}, d1);
+    sig(1);
+    assert(sum == 1);
+
+    d1.reset();
+    sig(1);
+    assert(sum == 1);
+
+    auto d2 = std::make_shared<dummy>();
+    std::weak_ptr<dummy> w2 = d2;
+    sig1.connect(oo{}, w2);
+    sig1(1);
+    assert(sum == 5);
+
+    d2.reset();
+    sig1(1);
+    assert(sum == 5);
+}
+
+void test_track_generic_lambda() {
+    std::stringstream s;
+
+    auto f = [&] (auto a, auto ...args) {
+        using result_t = int[];
+        s << a;
+        result_t r{ 1, ((void)(s << args), 1)..., };
+        (void)r;
+    };
+
+    signal<int> sig1;
+    signal<std::string> sig2;
+    signal<double> sig3;
+
+    auto d1 = std::make_shared<dummy>();
+    sig1.connect(f, d1);
+    sig2.connect(f, d1);
+    sig3.connect(f, d1);
+
+    sig1(1);
+    sig2("foo");
+    sig3(4.1);
+    assert(s.str() == "1foo4.1");
+
+    d1.reset();
+    sig1(2);
+    sig2("bar");
+    sig3(3.0);
+    assert(s.str() == "1foo4.1");
+}
+
 int main() {
     test_track_shared();
     test_track_other();
+    test_track_overloaded_function_object();
+    test_track_generic_lambda();
     return 0;
 }
 

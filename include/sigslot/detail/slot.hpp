@@ -2,7 +2,7 @@
 #include <memory>
 #include <utility>
 #include <atomic>
-#include "traits/function.hpp"
+#include "util.hpp"
 
 namespace pal {
 namespace detail {
@@ -61,12 +61,14 @@ public:
     slot_ptr<Args...> next;
 };
 
+template <typename, typename...> class slot {};
+
 /*
  * A slot object holds state information and a callable to to be called
  * whenever the function call operator of its slot_base base class is called.
  */
 template <typename Func, typename... Args>
-class slot : public slot_base<Args...> {
+class slot<Func, traits::typelist<Args...>> : public slot_base<Args...> {
 public:
     template <typename F>
     constexpr slot(F && f) : func{std::forward<F>(f)} {}
@@ -79,13 +81,15 @@ private:
     Func func;
 };
 
+template <typename, typename, typename...> class slot_tracked {};
+
 /*
  * An implementation of a slot that tracks the life of a supplied object
  * through a weak pointer in order to automatically disconnect the slot
  * on said object destruction.
  */
 template <typename Func, typename WeakPtr, typename... Args>
-class slot_tracked : public slot_base<Args...> {
+class slot_tracked<Func, WeakPtr, traits::typelist<Args...>> : public slot_base<Args...> {
 public:
     template <typename F, typename P>
     constexpr slot_tracked(F && f, P && p)
@@ -106,67 +110,6 @@ private:
     Func func;
     WeakPtr ptr;
 };
-
-template <typename Func>
-auto make_slot(Func && func) {
-    using slot_t = traits::apply_t<
-        slot,
-        traits::add_first_t<
-            traits::args_t<Func>,
-            Func>>;
-    return std::make_shared<slot_t>(std::forward<Func>(func));
-}
-
-template <typename Func, typename Obj>
-auto make_slot(Func func, Obj *obj) {
-    auto f = [=, f=std::forward<Func>(func)](auto && ...a) {
-        (obj->*func)(std::forward<decltype(a)>(a)...);
-    };
-
-    using slot_t = traits::apply_t<
-        slot,
-        traits::add_first_t<
-            traits::args_t<Func>,
-            decltype(f)>>;
-
-    return std::make_shared<slot_t>(std::move(f));
-}
-
-namespace detail {
-template <typename F, typename P>
-constexpr bool is_weak_pmf =
-    std::is_same<traits::class_t<F>, typename P::element_type>::value;
-} // namespace detail
-
-template <typename Func, typename Ptr,
-          std::enable_if_t<not detail::is_weak_pmf<Func, Ptr>>* = nullptr>
-auto make_slot_tracked(Func && func, Ptr ptr) {
-    using slot_t = traits::apply_t<
-        slot_tracked,
-        traits::concat_t<
-            traits::typelist<Func, Ptr>,
-            traits::args_t<Func>>>;
-
-    return std::make_shared<slot_t>(std::forward<Func>(func), ptr);
-}
-
-template <typename Func, typename Ptr,
-          std::enable_if_t<detail::is_weak_pmf<Func, Ptr>>* = nullptr>
-auto make_slot_tracked(Func && func, Ptr ptr) {
-    auto f = [=, f=std::forward<Func>(func)](auto && ...a) {
-        auto sptr = ptr.lock();
-        if (sptr)
-            ((*sptr).*func)(std::forward<decltype(a)>(a)...);
-    };
-
-    using slot_t = traits::apply_t<
-        slot_tracked,
-        traits::concat_t<
-            traits::typelist<decltype(f), Ptr>,
-            traits::args_t<Func>>>;
-
-    return std::make_shared<slot_t>(std::move(f), ptr);
-}
 
 } // namespace detail
 } // namespace pal
