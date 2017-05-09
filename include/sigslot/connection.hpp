@@ -92,7 +92,7 @@ public:
             d->unblock();
     }
 
-    connection_blocker blocker() noexcept {
+    connection_blocker blocker() const noexcept {
         return connection_blocker{m_state};
     }
 
