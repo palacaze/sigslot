@@ -16,8 +16,6 @@ namespace detail {
 // a weak pointer adater to allow QObject life tracking
 template <typename T>
 struct qpointer_adater {
-    using element_type = T;
-
     qpointer_adater(T *o) noexcept
         : m_ptr{o}
     {}
@@ -44,8 +42,6 @@ private:
 // a wrapper that exposes the right concepts for QWeakPointer
 template <typename T>
 struct qweakpointer_adater {
-    using element_type = T;
-
     qweakpointer_adater(QWeakPointer<T> o) noexcept
         : m_ptr{std::move(o)}
     {}

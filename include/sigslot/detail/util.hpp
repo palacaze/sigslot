@@ -61,13 +61,9 @@ struct is_weak_ptr_compatible : std::false_type {};
 
 template <typename T>
 struct is_weak_ptr_compatible<T, void_t<decltype(to_weak(std::declval<T>()))>>
-    : std::true_type {};
+    : is_weak_ptr<decltype(to_weak(std::declval<T>()))> {};
 
 } // namespace detail
-
-/// get the class type of a callable (no_class if not a class type)
-template <typename P>
-constexpr bool is_weak_ptr_v = detail::is_weak_ptr<P>::value;
 
 /// determine if a pointer is convertible into a "weak" pointer
 template <typename P>
