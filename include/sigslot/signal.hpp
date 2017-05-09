@@ -103,9 +103,9 @@ public:
      */
     template <typename Callable,
               std::enable_if_t<traits::is_callable_v<arg_list, Callable>>* = nullptr>
-    connection connect(Callable && c) {
+    connection connect(Callable c) {
         using slot_t = detail::slot<Callable, arg_list>;
-        auto s = std::make_shared<slot_t>(std::forward<Callable>(c));
+        auto s = std::make_shared<slot_t>(std::move(c));
         add_slot(s);
         return connection(s);
     }
@@ -120,8 +120,8 @@ public:
     template <typename Pmf, typename Ptr,
               std::enable_if_t<traits::is_callable_v<arg_list, Pmf, Ptr> &&
                                !traits::is_weak_ptr_compatible_v<Ptr>>* = nullptr>
-    connection connect(Pmf && pmf, Ptr ptr) {
-        auto f = [=, pmf=std::forward<Pmf>(pmf)](auto && ...a) {
+    connection connect(Pmf pmf, Ptr ptr) {
+        auto f = [=](auto && ...a) {
             (ptr->*pmf)(std::forward<decltype(a)>(a)...);
         };
 
@@ -150,11 +150,11 @@ public:
     template <typename Pmf, typename Ptr,
               std::enable_if_t<!traits::is_callable_v<arg_list, Pmf> &&
                                traits::is_weak_ptr_compatible_v<Ptr>>* = nullptr>
-    connection connect(Pmf && pmf, Ptr ptr) {
+    connection connect(Pmf pmf, Ptr ptr) {
         using traits::to_weak;
         auto w = to_weak(ptr);
 
-        auto f = [=, pmf=std::forward<Pmf>(pmf)](auto && ...a) {
+        auto f = [=](auto && ...a) {
             auto sp = w.lock();
             if (sp)
                 ((*sp).*pmf)(std::forward<decltype(a)>(a)...);
@@ -185,11 +185,11 @@ public:
     template <typename Callable, typename Trackable,
               std::enable_if_t<traits::is_callable_v<arg_list, Callable> &&
                                traits::is_weak_ptr_compatible_v<Trackable>>* = nullptr>
-    connection connect(Callable && c, Trackable ptr) {
+    connection connect(Callable c, Trackable ptr) {
         using traits::to_weak;
         auto w = to_weak(ptr);
         using slot_t = detail::slot_tracked<Callable, decltype(w), arg_list>;
-        auto s = std::make_shared<slot_t>(std::forward<Callable>(c), w);
+        auto s = std::make_shared<slot_t>(std::move(c), w);
         add_slot(s);
         return connection(s);
     }
