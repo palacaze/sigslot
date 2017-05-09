@@ -50,7 +50,7 @@ public:
 
     // method effectively responible for calling the "slot" function with
     // supplied arguments whenever emission happens.
-    virtual void call_slot(Args && ...) = 0;
+    virtual void call_slot(Args...) = 0;
 
     template <typename... U>
     void operator()(U && ...u) {
@@ -71,8 +71,8 @@ public:
     template <typename F>
     constexpr slot(F && f) : func{std::forward<F>(f)} {}
 
-    virtual void call_slot(Args && ...args) override {
-        func(std::forward<decltype(args)>(args)...);
+    virtual void call_slot(Args ...args) override {
+        func(args...);
     }
 
 private:
@@ -93,13 +93,13 @@ public:
           ptr{std::forward<P>(p)}
     {}
 
-    virtual void call_slot(Args && ...args) override {
+    virtual void call_slot(Args ...args) override {
         if (! slot_state::connected())
             return;
         if (ptr.expired())
             slot_state::disconnect();
         else
-            func(std::forward<decltype(args)>(args)...);
+            func(args...);
     }
 
 private:
