@@ -2,6 +2,7 @@
 #include <thread>
 #include <atomic>
 #include <cassert>
+#include <array>
 
 using namespace pal;
 

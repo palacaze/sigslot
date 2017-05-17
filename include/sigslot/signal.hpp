@@ -1,14 +1,343 @@
 #pragma once
+#include <type_traits>
 #include <memory>
 #include <utility>
 #include <mutex>
 #include <atomic>
-#include "detail/slot.hpp"
-#include "detail/mutex.hpp"
-#include "detail/util.hpp"
-#include "connection.hpp"
 
 namespace pal {
+
+namespace trait {
+
+/// represent a list of types
+template <typename...> struct typelist {};
+
+/**
+ * Pointers that can be converted to a weak pointer concept for tracking
+ * purpose must implement the to_weak() function in order to make use of
+ * ADL to convert that type and make it usable
+ */
+
+template<typename T>
+std::weak_ptr<T> to_weak(std::weak_ptr<T> w) {
+    return w;
+}
+
+template<typename T>
+std::weak_ptr<T> to_weak(std::shared_ptr<T> s) {
+    return s;
+}
+
+// tools
+namespace detail {
+
+template <class...>
+struct voider { using type = void; };
+
+// void_t from c++17
+template <class...T>
+using void_t = typename detail::voider<T...>::type;
+
+
+template <typename, typename, typename = void, typename = void>
+struct is_callable : std::false_type {};
+
+template <typename F, typename P, typename... T>
+struct is_callable<F, P, typelist<T...>, void_t<decltype(((*std::declval<P>()).*std::declval<F>())(std::declval<T>()...))>> : std::true_type {};
+
+template <typename F, typename... T>
+struct is_callable<F, typelist<T...>, void_t<decltype(std::declval<F>()(std::declval<T>()...))>> : std::true_type {};
+
+
+template <typename T, typename = void>
+struct is_weak_ptr : std::false_type {};
+
+template <typename T>
+struct is_weak_ptr<T, void_t<decltype(std::declval<T>().expired()),
+                             decltype(std::declval<T>().lock()),
+                             decltype(std::declval<T>().reset())>>
+    : std::true_type {};
+
+template <typename T, typename = void>
+struct is_weak_ptr_compatible : std::false_type {};
+
+template <typename T>
+struct is_weak_ptr_compatible<T, void_t<decltype(to_weak(std::declval<T>()))>>
+    : is_weak_ptr<decltype(to_weak(std::declval<T>()))> {};
+
+
+} // namespace detail
+
+/// determine if a pointer is convertible into a "weak" pointer
+template <typename P>
+constexpr bool is_weak_ptr_compatible_v = detail::is_weak_ptr_compatible<P>::value;
+
+/// determine if a type T (Callale or Pmf) is callable with supplied arguments in L
+template <typename L, typename... T>
+constexpr bool is_callable_v = detail::is_callable<T..., L>::value;
+
+} // namespace trait
+
+
+namespace detail {
+
+/* slot_state holds slot type independant state, to be used to interact with
+ * slots indirectly through connection and scoped_connection objects.
+ */
+class slot_state {
+public:
+    constexpr slot_state() noexcept
+        : m_connected(true),
+          m_blocked(false) {}
+
+    virtual ~slot_state() = default;
+
+    bool connected() const noexcept { return m_connected; }
+    bool disconnect() noexcept { return m_connected.exchange(false); }
+
+    bool blocked() const noexcept { return m_blocked.load(); }
+    void block()   noexcept { m_blocked.store(true); }
+    void unblock() noexcept { m_blocked.store(false); }
+
+private:
+    std::atomic<bool> m_connected;
+    std::atomic<bool> m_blocked;
+};
+
+
+template <typename...>
+class slot_base;
+
+template <typename... T>
+using slot_ptr = std::shared_ptr<slot_base<T...>>;
+
+/* A base class for slot objects. This base type only depends on slot argument
+ * types, it will be used as an element in an intrusive singly-linked list of
+ * slots, hence the public next member.
+ */
+template <typename... Args>
+class slot_base : public slot_state {
+public:
+    using base_types = trait::typelist<Args...>;
+
+    virtual ~slot_base() = default;
+
+    // method effectively responible for calling the "slot" function with
+    // supplied arguments whenever emission happens.
+    virtual void call_slot(Args...) = 0;
+
+    template <typename... U>
+    void operator()(U && ...u) {
+        if (slot_state::connected() && !slot_state::blocked())
+            call_slot(std::forward<U>(u)...);
+    }
+
+    slot_ptr<Args...> next;
+};
+
+template <typename, typename...> class slot {};
+
+/*
+ * A slot object holds state information and a callable to to be called
+ * whenever the function call operator of its slot_base base class is called.
+ */
+template <typename Func, typename... Args>
+class slot<Func, trait::typelist<Args...>> : public slot_base<Args...> {
+public:
+    template <typename F>
+    constexpr slot(F && f) : func{std::forward<F>(f)} {}
+
+    virtual void call_slot(Args ...args) override {
+        func(args...);
+    }
+
+private:
+    Func func;
+};
+
+template <typename, typename, typename...> class slot_tracked {};
+
+/*
+ * An implementation of a slot that tracks the life of a supplied object
+ * through a weak pointer in order to automatically disconnect the slot
+ * on said object destruction.
+ */
+template <typename Func, typename WeakPtr, typename... Args>
+class slot_tracked<Func, WeakPtr, trait::typelist<Args...>> : public slot_base<Args...> {
+public:
+    template <typename F, typename P>
+    constexpr slot_tracked(F && f, P && p)
+        : func{std::forward<F>(f)},
+          ptr{std::forward<P>(p)}
+    {}
+
+    virtual void call_slot(Args ...args) override {
+        if (! slot_state::connected())
+            return;
+        if (ptr.expired())
+            slot_state::disconnect();
+        else
+            func(args...);
+    }
+
+private:
+    Func func;
+    WeakPtr ptr;
+};
+
+
+// noop mutex for thread-unsafe use
+struct null_mutex {
+    null_mutex() = default;
+    null_mutex(const null_mutex &) = delete;
+    null_mutex operator=(const null_mutex &) = delete;
+    null_mutex(null_mutex &&) = delete;
+    null_mutex operator=(null_mutex &&) = delete;
+
+    bool try_lock() { return true; }
+    void lock() {}
+    void unlock() {}
+};
+
+} // namespace detail
+
+
+/**
+ * connection_blocker is a RAII object that blocks a connection until destruction
+ */
+class connection_blocker {
+public:
+    connection_blocker() = default;
+    ~connection_blocker() noexcept { release(); }
+
+    connection_blocker(const connection_blocker &) = delete;
+    connection_blocker & operator=(const connection_blocker &) = delete;
+
+    connection_blocker(connection_blocker && o) noexcept
+        : m_state{std::move(o.m_state)}
+    {}
+
+    connection_blocker & operator=(connection_blocker && o) noexcept {
+        release();
+        m_state.swap(o.m_state);
+        return *this;
+    }
+
+private:
+    friend class connection;
+    connection_blocker(std::weak_ptr<detail::slot_state> s) noexcept
+        : m_state{std::move(s)}
+    {
+        auto d = m_state.lock();
+        if (d) d->block();
+    }
+
+    void release() noexcept {
+        auto d = m_state.lock();
+        if (d) d->unblock();
+    }
+
+private:
+    std::weak_ptr<detail::slot_state> m_state;
+};
+
+
+/**
+ * A connection object allows interaction with an ongoing slot connection
+ *
+ * It allows common actions such as connection blocking and disconnection.
+ * Note that connection is not a RAII object, one does not need to hold one
+ * such object to keep the signal-slot connection alive.
+ */
+class connection {
+public:
+    connection() = default;
+    virtual ~connection() = default;
+
+    connection(const connection &) noexcept = default;
+    connection & operator=(const connection &) noexcept = default;
+    connection(connection &&) noexcept = default;
+    connection & operator=(connection &&) noexcept = default;
+
+    bool valid() const noexcept {
+        return !m_state.expired();
+    }
+
+    bool connected() const noexcept {
+        const auto d = m_state.lock();
+        return d && d->connected();
+    }
+
+    bool disconnect() noexcept {
+        auto d = m_state.lock();
+        return d && d->disconnect();
+    }
+
+    bool blocked() const noexcept {
+        const auto d = m_state.lock();
+        return d && d->blocked();
+    }
+
+    void block() noexcept {
+        auto d = m_state.lock();
+        if(d)
+            d->block();
+    }
+
+    void unblock() noexcept {
+        auto d = m_state.lock();
+        if(d)
+            d->unblock();
+    }
+
+    connection_blocker blocker() const noexcept {
+        return connection_blocker{m_state};
+    }
+
+protected:
+    template <typename, typename...> friend class signal_base;
+    connection(std::weak_ptr<detail::slot_state> s) noexcept
+        : m_state{std::move(s)}
+    {}
+
+protected:
+    std::weak_ptr<detail::slot_state> m_state;
+};
+
+/**
+ * scoped_connection is a RAII version of connection
+ * It disconnects the slot from the signal upon destruction.
+ */
+class scoped_connection : public connection {
+public:
+    scoped_connection() = default;
+    ~scoped_connection() {
+        disconnect();
+    }
+
+    scoped_connection(const connection &c) noexcept : connection(c) {}
+    scoped_connection(connection &&c) noexcept : connection(std::move(c)) {}
+
+    scoped_connection(const scoped_connection &) noexcept = delete;
+    scoped_connection & operator=(const scoped_connection &) noexcept = delete;
+
+    scoped_connection(scoped_connection && o) noexcept
+        : connection{std::move(o.m_state)}
+    {}
+
+    scoped_connection & operator=(scoped_connection && o) noexcept {
+        disconnect();
+        m_state.swap(o.m_state);
+        return *this;
+    }
+
+private:
+    template <typename, typename...> friend class signal_base;
+    scoped_connection(std::weak_ptr<detail::slot_state> s) noexcept
+        : connection{std::move(s)}
+    {}
+};
+
 
 /**
  * signal_base is an implementation of the observer pattern, through the use
@@ -28,7 +357,7 @@ template <typename Lockable, typename... T>
 class signal_base {
     using lock_type = std::unique_lock<Lockable>;
     using slot_ptr = detail::slot_ptr<T...>;
-    using arg_list = traits::typelist<T...>;
+    using arg_list = trait::typelist<T...>;
 
 public:
     signal_base() noexcept : m_block(false) {}
@@ -102,7 +431,7 @@ public:
      * @return a connection object that can be used to interact with the slot
      */
     template <typename Callable,
-              std::enable_if_t<traits::is_callable_v<arg_list, Callable>>* = nullptr>
+              std::enable_if_t<trait::is_callable_v<arg_list, Callable>>* = nullptr>
     connection connect(Callable c) {
         using slot_t = detail::slot<Callable, arg_list>;
         auto s = std::make_shared<slot_t>(std::move(c));
@@ -118,8 +447,8 @@ public:
      * @return a connection object that can be used to interact with the slot
      */
     template <typename Pmf, typename Ptr,
-              std::enable_if_t<traits::is_callable_v<arg_list, Pmf, Ptr> &&
-                               !traits::is_weak_ptr_compatible_v<Ptr>>* = nullptr>
+              std::enable_if_t<trait::is_callable_v<arg_list, Pmf, Ptr> &&
+                               !trait::is_weak_ptr_compatible_v<Ptr>>* = nullptr>
     connection connect(Pmf pmf, Ptr ptr) {
         auto f = [=](auto && ...a) {
             (ptr->*pmf)(std::forward<decltype(a)>(a)...);
@@ -148,10 +477,10 @@ public:
      * @return a connection object that can be used to interact with the slot
      */
     template <typename Pmf, typename Ptr,
-              std::enable_if_t<!traits::is_callable_v<arg_list, Pmf> &&
-                               traits::is_weak_ptr_compatible_v<Ptr>>* = nullptr>
+              std::enable_if_t<!trait::is_callable_v<arg_list, Pmf> &&
+                               trait::is_weak_ptr_compatible_v<Ptr>>* = nullptr>
     connection connect(Pmf pmf, Ptr ptr) {
-        using traits::to_weak;
+        using trait::to_weak;
         auto w = to_weak(ptr);
 
         auto f = [=](auto && ...a) {
@@ -183,10 +512,10 @@ public:
      * @return a connection object that can be used to interact with the slot
      */
     template <typename Callable, typename Trackable,
-              std::enable_if_t<traits::is_callable_v<arg_list, Callable> &&
-                               traits::is_weak_ptr_compatible_v<Trackable>>* = nullptr>
+              std::enable_if_t<trait::is_callable_v<arg_list, Callable> &&
+                               trait::is_weak_ptr_compatible_v<Trackable>>* = nullptr>
     connection connect(Callable c, Trackable ptr) {
-        using traits::to_weak;
+        using trait::to_weak;
         auto w = to_weak(ptr);
         using slot_t = detail::slot_tracked<Callable, decltype(w), arg_list>;
         auto s = std::make_shared<slot_t>(std::move(c), w);

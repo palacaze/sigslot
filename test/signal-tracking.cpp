@@ -23,7 +23,7 @@ struct oo {
 
 struct dummy {};
 
-static_assert(traits::is_callable_v<traits::typelist<int>, decltype(&s::f1), std::shared_ptr<s>>, "");
+static_assert(trait::is_callable_v<trait::typelist<int>, decltype(&s::f1), std::shared_ptr<s>>, "");
 
 void test_track_shared() {
     sum = 0;
