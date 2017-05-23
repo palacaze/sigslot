@@ -457,22 +457,25 @@ public:
     template <typename... A>
     void operator()(A && ... a) {
         lock_type lock(m_mutex);
-        slot_ptr prev = nullptr;
-        slot_ptr curr = m_slots;
+        slot_ptr *prev = nullptr;
+        slot_ptr *curr = m_slots ? &m_slots : nullptr;
 
         while (curr) {
             // call non blocked, non connected slots
-            if (curr->connected()) {
-                if (!m_block && !curr->blocked())
-                    curr->operator()(std::forward<A>(a)...);
+            if ((*curr)->connected()) {
+                if (!m_block && !(*curr)->blocked())
+                    (*curr)->operator()(std::forward<A>(a)...);
                 prev = curr;
-                curr = curr->next;
+                curr = (*curr)->next ? &((*curr)->next) : nullptr;
             }
             // remove slots marked as disconnected
             else {
-                if (prev)
-                    prev->next = curr->next;
-                curr = curr->next;
+                if (prev) {
+                    (*prev)->next = (*curr)->next;
+                    curr = (*prev)->next ? &((*prev)->next) : nullptr;
+                }
+                else
+                    curr = (*curr)->next ? &((*curr)->next) : nullptr;
             }
         }
     }
