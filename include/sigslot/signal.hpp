@@ -43,10 +43,14 @@ template <typename, typename, typename = void, typename = void>
 struct is_callable : std::false_type {};
 
 template <typename F, typename P, typename... T>
-struct is_callable<F, P, typelist<T...>, void_t<decltype(((*std::declval<P>()).*std::declval<F>())(std::declval<T>()...))>> : std::true_type {};
+struct is_callable<F, P, typelist<T...>,
+        void_t<decltype(((*std::declval<P>()).*std::declval<F>())(std::declval<T>()...))>>
+    : std::true_type {};
 
 template <typename F, typename... T>
-struct is_callable<F, typelist<T...>, void_t<decltype(std::declval<F>()(std::declval<T>()...))>> : std::true_type {};
+struct is_callable<F, typelist<T...>,
+        void_t<decltype(std::declval<F>()(std::declval<T>()...))>>
+    : std::true_type {};
 
 
 template <typename T, typename = void>
@@ -65,16 +69,15 @@ template <typename T>
 struct is_weak_ptr_compatible<T, void_t<decltype(to_weak(std::declval<T>()))>>
     : is_weak_ptr<decltype(to_weak(std::declval<T>()))> {};
 
-
 } // namespace detail
 
 /// determine if a pointer is convertible into a "weak" pointer
 template <typename P>
-constexpr bool is_weak_ptr_compatible_v = detail::is_weak_ptr_compatible<P>::value;
+constexpr bool is_weak_ptr_compatible_v = detail::is_weak_ptr_compatible<std::decay_t<P>>::value;
 
 /// determine if a type T (Callale or Pmf) is callable with supplied arguments in L
 template <typename L, typename... T>
-constexpr bool is_callable_v = detail::is_callable<T..., L>::value;
+constexpr bool is_callable_v = detail::is_callable<std::decay_t<T>..., L>::value;
 
 } // namespace trait
 
@@ -138,7 +141,7 @@ public:
 template <typename, typename...> class slot {};
 
 /*
- * A slot object holds state information and a callable to to be called
+ * A slot object holds state information, and a callable to to be called
  * whenever the function call operator of its slot_base base class is called.
  */
 template <typename Func, typename... Args>
@@ -152,7 +155,29 @@ public:
     }
 
 private:
-    Func func;
+    std::decay_t<Func> func;
+};
+
+/*
+ * A slot object holds state information, an object and a pointer over member
+ * function to be called whenever the function call operator of its slot_base
+ * base class is called.
+ */
+template <typename Pmf, typename Ptr, typename... Args>
+class slot<Pmf, Ptr, trait::typelist<Args...>> : public slot_base<Args...> {
+public:
+    template <typename F, typename P>
+    constexpr slot(F && f, P && p)
+        : pmf{std::forward<F>(f)},
+          ptr{std::forward<P>(p)} {}
+
+    virtual void call_slot(Args ...args) override {
+        ((*ptr).*pmf)(args...);
+    }
+
+private:
+    std::decay_t<Pmf> pmf;
+    std::decay_t<Ptr> ptr;
 };
 
 template <typename, typename, typename...> class slot_tracked {};
@@ -181,8 +206,39 @@ public:
     }
 
 private:
-    Func func;
-    WeakPtr ptr;
+    std::decay_t<Func> func;
+    std::decay_t<WeakPtr> ptr;
+};
+
+template <typename, typename, typename...> class slot_pmf_tracked {};
+
+/*
+ * An implementation of a slot as a pointer over member function, that tracks
+ * the life of a supplied object through a weak pointer in order to automatically
+ * disconnect the slot on said object destruction.
+ */
+template <typename Pmf, typename WeakPtr, typename... Args>
+class slot_pmf_tracked<Pmf, WeakPtr, trait::typelist<Args...>> : public slot_base<Args...> {
+public:
+    template <typename F, typename P>
+    constexpr slot_pmf_tracked(F && f, P && p)
+        : pmf{std::forward<F>(f)},
+          ptr{std::forward<P>(p)}
+    {}
+
+    virtual void call_slot(Args ...args) override {
+        if (! slot_state::connected())
+            return;
+        auto sp = ptr.lock();
+        if (!sp)
+            slot_state::disconnect();
+        else
+            ((*sp).*pmf)(args...);
+    }
+
+private:
+    std::decay_t<Pmf> pmf;
+    std::decay_t<WeakPtr> ptr;
 };
 
 
@@ -357,9 +413,10 @@ template <typename Lockable, typename... T>
 class signal_base {
     using lock_type = std::unique_lock<Lockable>;
     using slot_ptr = detail::slot_ptr<T...>;
-    using arg_list = trait::typelist<T...>;
 
 public:
+    using arg_list = trait::typelist<T...>;
+
     signal_base() noexcept : m_block(false) {}
     ~signal_base() {
         disconnect_all();
@@ -432,9 +489,9 @@ public:
      */
     template <typename Callable,
               std::enable_if_t<trait::is_callable_v<arg_list, Callable>>* = nullptr>
-    connection connect(Callable c) {
+    connection connect(Callable && c) {
         using slot_t = detail::slot<Callable, arg_list>;
-        auto s = std::make_shared<slot_t>(std::move(c));
+        auto s = std::make_shared<slot_t>(std::forward<Callable>(c));
         add_slot(s);
         return connection(s);
     }
@@ -449,13 +506,9 @@ public:
     template <typename Pmf, typename Ptr,
               std::enable_if_t<trait::is_callable_v<arg_list, Pmf, Ptr> &&
                                !trait::is_weak_ptr_compatible_v<Ptr>>* = nullptr>
-    connection connect(Pmf pmf, Ptr ptr) {
-        auto f = [=](auto && ...a) {
-            (ptr->*pmf)(std::forward<decltype(a)>(a)...);
-        };
-
-        using slot_t = detail::slot<decltype(f), arg_list>;
-        auto s = std::make_shared<slot_t>(std::move(f));
+    connection connect(Pmf && pmf, Ptr && ptr) {
+        using slot_t = detail::slot<Pmf, Ptr, arg_list>;
+        auto s = std::make_shared<slot_t>(std::forward<Pmf>(pmf), std::forward<Ptr>(ptr));
         add_slot(s);
         return connection(s);
     }
@@ -479,18 +532,11 @@ public:
     template <typename Pmf, typename Ptr,
               std::enable_if_t<!trait::is_callable_v<arg_list, Pmf> &&
                                trait::is_weak_ptr_compatible_v<Ptr>>* = nullptr>
-    connection connect(Pmf pmf, Ptr ptr) {
+    connection connect(Pmf && pmf, Ptr && ptr) {
         using trait::to_weak;
-        auto w = to_weak(ptr);
-
-        auto f = [=](auto && ...a) {
-            auto sp = w.lock();
-            if (sp)
-                ((*sp).*pmf)(std::forward<decltype(a)>(a)...);
-        };
-
-        using slot_t = detail::slot_tracked<decltype(f), decltype(w), arg_list>;
-        auto s = std::make_shared<slot_t>(std::move(f), w);
+        auto w = to_weak(std::forward<Ptr>(ptr));
+        using slot_t = detail::slot_pmf_tracked<Pmf, decltype(w), arg_list>;
+        auto s = std::make_shared<slot_t>(std::forward<Pmf>(pmf), w);
         add_slot(s);
         return connection(s);
     }
@@ -514,11 +560,11 @@ public:
     template <typename Callable, typename Trackable,
               std::enable_if_t<trait::is_callable_v<arg_list, Callable> &&
                                trait::is_weak_ptr_compatible_v<Trackable>>* = nullptr>
-    connection connect(Callable c, Trackable ptr) {
+    connection connect(Callable && c, Trackable && ptr) {
         using trait::to_weak;
-        auto w = to_weak(ptr);
+        auto w = to_weak(std::forward<Trackable>(ptr));
         using slot_t = detail::slot_tracked<Callable, decltype(w), arg_list>;
-        auto s = std::make_shared<slot_t>(std::move(c), w);
+        auto s = std::make_shared<slot_t>(std::forward<Callable>(c), w);
         add_slot(s);
         return connection(s);
     }
