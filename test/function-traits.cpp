@@ -1,7 +1,7 @@
 #include <type_traits>
-#include <sigslot/detail/util.hpp>
+#include <sigslot/signal.hpp>
 
-using namespace pal::traits;
+using namespace pal::trait;
 
 void f1(int, char, float) {}
 void f2(int, char, float) noexcept {}
