@@ -1,4 +1,4 @@
-# Pal Sigslot
+# Sigslot, a signal-slot library
 
 Sigslot is a header-only, thread safe implementation of signal-slots for C++.
 

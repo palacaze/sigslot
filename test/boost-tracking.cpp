@@ -3,7 +3,7 @@
 #include <sigslot/signal.hpp>
 #include <cassert>
 
-using namespace pal;
+using namespace sigslot;
 
 int sum = 0;
 

@@ -4,7 +4,7 @@
 #include <cassert>
 #include <cmath>
 
-using namespace pal;
+using namespace sigslot;
 
 int sum = 0;
 

@@ -5,7 +5,7 @@
 #include <mutex>
 #include <atomic>
 
-namespace pal {
+namespace sigslot {
 
 namespace trait {
 
@@ -77,7 +77,7 @@ constexpr bool is_weak_ptr_compatible_v = detail::is_weak_ptr_compatible<std::de
 
 /// determine if a type T (Callable or Pmf) is callable with supplied arguments in L
 template <typename L, typename... T>
-constexpr bool is_callable_v = detail::is_callable<std::decay_t<T>..., L>::value;
+constexpr bool is_callable_v = detail::is_callable<T..., L>::value;
 
 } // namespace trait
 
@@ -741,5 +741,5 @@ using signal = signal_base<std::mutex, T...>;
 template <typename... T>
 using signal_r = signal_base<std::recursive_mutex, T...>;
 
-} // namespace pal
+} // namespace sigslot
 

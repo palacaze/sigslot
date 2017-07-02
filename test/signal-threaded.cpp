@@ -4,7 +4,7 @@
 #include <cassert>
 #include <array>
 
-using namespace pal;
+using namespace sigslot;
 
 std::atomic<int> sum{0};
 

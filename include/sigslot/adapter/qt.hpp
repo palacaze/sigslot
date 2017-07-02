@@ -10,7 +10,7 @@
  * QWeakPointer and QSharedPointer objects, when connected to signals.
  */
 
-namespace pal {
+namespace sigslot {
 namespace detail {
 
 // a weak pointer adater to allow QObject life tracking
@@ -63,24 +63,24 @@ private:
 };
 
 } // namespace detail
-} // namespace pal
+} // namespace sigslot
 
 
 QT_BEGIN_NAMESPACE
 
 template <typename T>
-std::enable_if_t<std::is_base_of<QObject, T>::value, pal::detail::qpointer_adater<T>>
+std::enable_if_t<std::is_base_of<QObject, T>::value, sigslot::detail::qpointer_adater<T>>
 to_weak(T *p) {
     return {p};
 }
 
 template <typename T>
-pal::detail::qweakpointer_adater<T> to_weak(QWeakPointer<T> p) {
+sigslot::detail::qweakpointer_adater<T> to_weak(QWeakPointer<T> p) {
     return {p};
 }
 
 template <typename T>
-pal::detail::qweakpointer_adater<T> to_weak(QSharedPointer<T> p) {
+sigslot::detail::qweakpointer_adater<T> to_weak(QSharedPointer<T> p) {
     return {p};
 }
 
