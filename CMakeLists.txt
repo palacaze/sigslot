@@ -50,7 +50,7 @@ install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(EXPORT PalSigslotConfig NAMESPACE Pal:: DESTINATION "${CMAKE_INSTALL_DATADIR}/PalSigSlot/cmake")
 
 if(COMPILE_EXAMPLES)
-    # add_subdirectory(example)
+    add_subdirectory(example)
 endif()
 
 if(COMPILE_TESTS)
