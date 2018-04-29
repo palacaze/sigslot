@@ -20,12 +20,24 @@ struct obj {
     void operator()() {}
 };
 
+// A generic function object that deals with any input argument
+struct printer {
+    template <typename T, typename... Ts>
+    void operator()(T a, Ts && ...args) const {
+       std::cout << a;
+        (void)std::initializer_list<int>{
+            ((void)(std::cout << " " << std::forward<Ts>(args)), 1)...
+        };
+        std::cout << "\n";
+    }
+};
+
 int main() {
     // declare a signal with float, int, bool and string& arguments
     sigslot::signal<float, int, bool, std::string&> sig;
 
-    // a generic lambda that prints its arguments to stdout
-    auto printer = [] (auto a, auto ...args) {
+    // a Generic lambda that prints its arguments to stdout
+    auto lambda_printer = [] (auto a, auto && ...args) {
         std::cout << a;
         (void)std::initializer_list<int>{
             ((void)(std::cout << " " << args), 1)...
@@ -35,8 +47,9 @@ int main() {
 
     // connect the slots
     foo ff;
-    sig.connect(printer);
+    sig.connect(printer());
     sig.connect(&foo::bar, &ff);
+    sig.connect(lambda_printer);
     sig.connect(obj());
 
     float f = 1.f;

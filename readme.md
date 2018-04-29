@@ -44,7 +44,7 @@ All the snippets presented below are available in compilable source code form in
 
 Here is a first example that showcases the most basic features of the library.
 
-We first declare parameter-free signal `sig`, then we proceed to connect several slots and at last emit a signal which triggers the invocation of every slot callable connected beforehand. Notice how The library copes with diverse forms of callables.
+We first declare a parameter-free signal `sig`, then we proceed to connect several slots and at last emit a signal which triggers the invocation of every slot callable connected beforehand. Notice how The library handles diverse forms of callables.
 
 ```cpp
 #include <sigslot/signal.hpp>
@@ -64,7 +64,7 @@ struct o {
 int main() {
     s d;
     auto lambda = []() { std::cout << "lambda\n"; };
-    auto gen_lambda = [](auto &&) { std::cout << "generic lambda\n"; };
+    auto gen_lambda = [](auto && ...a) { std::cout << "generic lambda\n"; };
 
     // declare a signal instance with no arguments
     sigslot::signal<> sig;
@@ -118,7 +118,7 @@ int main() {
     sigslot::signal<float, int, bool, std::string&> sig;
 
     // a generic lambda that prints its arguments to stdout
-    auto printer = [] (auto a, auto ...args) {
+    auto printer = [] (auto a, auto && ...args) {
         std::cout << a;
         (void)std::initializer_list<int>{
             ((void)(std::cout << " " << args), 1)...
@@ -144,7 +144,7 @@ int main() {
 
 As shown, slots arguments types don't need to be strictly identical to the signal template parameters, being convertible-from is fine. Generic arguments are fine too, as shown with the `printer` generic lambda (which could have been written as a function template too).
 
-Right now there are two limitations that I can think of with respect to callable handling: default arguments and function overloading. Both are handled correctly in the case of function objects, but will fail to compile with static and member functions, for different but related reasons.
+Right now there are two limitations that I can think of with respect to callable handling: default arguments and function overloading. Both are working correctly in the case of function objects but will fail to compile with static and member functions, for different but related reasons.
 
 #### Coping with overloaded functions
 
@@ -157,18 +157,18 @@ struct foo {
 };
 ```
 
-What should &foo::bar refer to? As per overloading, this pointer over member function does not map to a unique symbol, so the compiler won't be able to pick the right symbol. One way of resolving the right symbol is to explicitly cast the function pointer to the right function type. Here is an example that does just that using a little helper tool for a lighter syntax (In fact I will probably add this to the library soon).
+What should `&foo::bar` refer to? As per overloading, this pointer over member function does not map to a unique symbol, so the compiler won't be able to pick the right symbol. One way of resolving the right symbol is to explicitly cast the function pointer to the right function type. Here is an example that does just that using a little helper tool for a lighter syntax (In fact I will probably add this to the library soon).
 
 ```cpp
 #include <sigslot/signal.hpp>
 
 template <typename... Args, typename C>
-constexpr auto overload_of(void (C::*ptr)(Args...)) {
+constexpr auto overload(void (C::*ptr)(Args...)) {
     return ptr;
 }
 
 template <typename... Args>
-constexpr auto overload_of(void (*ptr)(Args...)) {
+constexpr auto overload(void (*ptr)(Args...)) {
     return ptr;
 }
 
@@ -193,9 +193,9 @@ int main() {
 
     // connect the slots, casting to the right overload if necessary
     foo ff;
-    sig.connect(overload_of<int>(&foo::bar), &ff);
-    sig.connect(overload_of<int>(&foo::baz));
-    sig.connect(overload_of<int>(&moo));
+    sig.connect(overload<int>(&foo::bar), &ff);
+    sig.connect(overload<int>(&foo::baz));
+    sig.connect(overload<int>(&moo));
     sig.connect(obj());
 
     sig(0);
@@ -206,9 +206,9 @@ int main() {
 
 #### Coping with function with default arguments
 
-Default arguments are not part of the function type signature, and can be redefined, so they are really difficult to deal with. When connecting a slot to a signal, the library determines if the supplied callable can be invoked with the signal argument types, but at this point the existence of default function arguments it unknown so there may be a mismatch in the number of arguments.
+Default arguments are not part of the function type signature, and can be redefined, so they are really difficult to deal with. When connecting a slot to a signal, the library determines if the supplied callable can be invoked with the signal argument types, but at this point the existence of default function arguments is unknown so there might be a mismatch in the number of arguments.
 
-The simplest way of dealing with this use case would be to create a bind adapter, in fact we can even make it quite generic like so (I know, booo, a macro!):
+A simple work around for this use case would is to create a bind adapter, in fact we can even make it quite generic like so:
 
 ```cpp
 #include <sigslot/signal.hpp>

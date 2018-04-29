@@ -278,6 +278,21 @@ void test_scoped_connection() {
 
     sig(1);
     assert(sum == 4);
+
+    sum = 0;
+
+    {
+        scoped_connection sc1 = sig.connect(f1);
+        sig(1);
+        assert(sum == 1);
+
+        scoped_connection sc2 = sig.connect(f2);
+        sig(1);
+        assert(sum == 4);
+    }
+
+    sig(1);
+    assert(sum == 4);
 }
 
 void test_connection_blocking() {

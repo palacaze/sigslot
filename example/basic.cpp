@@ -15,7 +15,7 @@ struct o {
 int main() {
     s d;
     auto lambda = []() { std::cout << "lambda\n"; };
-    auto gen_lambda = [](auto &&) { std::cout << "generic lambda\n"; };
+    auto gen_lambda = [](auto && ...a) { std::cout << "generic lambda\n"; };
 
     // declare a signal instance with no arguments
     sigslot::signal<> sig;
