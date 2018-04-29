@@ -19,7 +19,7 @@ struct o {
 void test_free_connection() {
     sum = 0;
     signal<int> sig;
-    sig.connect(f);
+    sig.connect_extended(f);
 
     sig(1);
     assert(sum == 1);
@@ -30,7 +30,7 @@ void test_free_connection() {
 void test_static_connection() {
     sum = 0;
     signal<int> sig;
-    sig.connect(&s::sf);
+    sig.connect_extended(&s::sf);
 
     sig(1);
     assert(sum == 1);
@@ -42,7 +42,7 @@ void test_pmf_connection() {
     sum = 0;
     signal<int> sig;
     s p;
-    sig.connect(&s::f, &p);
+    sig.connect_extended(&s::f, &p);
 
     sig(1);
     assert(sum == 1);
@@ -53,7 +53,7 @@ void test_pmf_connection() {
 void test_function_object_connection() {
     sum = 0;
     signal<int> sig;
-    sig.connect(o{});
+    sig.connect_extended(o{});
 
     sig(1);
     assert(sum == 1);
@@ -65,11 +65,11 @@ void test_lambda_connection() {
     sum = 0;
     signal<int> sig;
 
-    sig.connect([&](connection &c, int i) { sum += i; c.disconnect(); });
+    sig.connect_extended([&](connection &c, int i) { sum += i; c.disconnect(); });
     sig(1);
     assert(sum == 1);
 
-    sig.connect([&](connection &c, int i) mutable { sum += 2*i; c.disconnect(); });
+    sig.connect_extended([&](connection &c, int i) mutable { sum += 2*i; c.disconnect(); });
     sig(1);
     assert(sum == 3);
     sig(1);

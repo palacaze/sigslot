@@ -534,9 +534,9 @@ public:
      * @param c a callable
      * @return a connection object that can be used to interact with the slot
      */
-    template <typename Callable, typename Args = arg_list,
-              std::enable_if_t<trait::is_callable_v<Args, Callable>>* = nullptr>
-    connection connect(Callable && c) {
+    template <typename Callable>
+    std::enable_if_t<trait::is_callable_v<arg_list, Callable>, connection>
+    connect(Callable && c) {
         using slot_t = detail::slot<Callable, arg_list>;
         auto s = std::make_shared<slot_t>(std::forward<Callable>(c));
         add_slot(s);
@@ -552,10 +552,10 @@ public:
      * @param c a callable
      * @return a connection object that can be used to interact with the slot
      */
-    template <typename Callable, typename Args = arg_list, typename EArgs = ext_arg_list>
-    std::enable_if_t<!trait::is_callable_v<Args, Callable>, connection>
-    connect(Callable && c) {
-        using slot_t = detail::slot<Callable, EArgs>;
+    template <typename Callable>
+    std::enable_if_t<trait::is_callable_v<ext_arg_list, Callable>, connection>
+    connect_extended(Callable && c) {
+        using slot_t = detail::slot<Callable, ext_arg_list>;
         auto s = std::make_shared<slot_t>(std::forward<Callable>(c));
         s->conn = connection(s);
         add_slot(s);
@@ -569,10 +569,10 @@ public:
      * @param ptr an object pointer
      * @return a connection object that can be used to interact with the slot
      */
-    template <typename Pmf, typename Ptr,
-              std::enable_if_t<trait::is_callable_v<arg_list, Pmf, Ptr> &&
-                               !trait::is_weak_ptr_compatible_v<Ptr>>* = nullptr>
-    connection connect(Pmf && pmf, Ptr && ptr) {
+    template <typename Pmf, typename Ptr>
+    std::enable_if_t<trait::is_callable_v<arg_list, Pmf, Ptr> &&
+                     !trait::is_weak_ptr_compatible_v<Ptr>, connection>
+    connect(Pmf && pmf, Ptr && ptr) {
         using slot_t = detail::slot<Pmf, Ptr, arg_list>;
         auto s = std::make_shared<slot_t>(std::forward<Pmf>(pmf), std::forward<Ptr>(ptr));
         add_slot(s);
@@ -586,10 +586,10 @@ public:
      * @param ptr an object pointer
      * @return a connection object that can be used to interact with the slot
      */
-    template <typename Pmf, typename Ptr,
-              std::enable_if_t<trait::is_callable_v<ext_arg_list, Pmf, Ptr> &&
-                               !trait::is_weak_ptr_compatible_v<Ptr>>* = nullptr>
-    connection connect(Pmf && pmf, Ptr && ptr) {
+    template <typename Pmf, typename Ptr>
+    std::enable_if_t<trait::is_callable_v<ext_arg_list, Pmf, Ptr> &&
+                     !trait::is_weak_ptr_compatible_v<Ptr>, connection>
+    connect_extended(Pmf && pmf, Ptr && ptr) {
         using slot_t = detail::slot<Pmf, Ptr, ext_arg_list>;
         auto s = std::make_shared<slot_t>(std::forward<Pmf>(pmf), std::forward<Ptr>(ptr));
         s->conn = connection(s);
@@ -613,10 +613,10 @@ public:
      * @param ptr a trackable object pointer
      * @return a connection object that can be used to interact with the slot
      */
-    template <typename Pmf, typename Ptr,
-              std::enable_if_t<!trait::is_callable_v<arg_list, Pmf> &&
-                               trait::is_weak_ptr_compatible_v<Ptr>>* = nullptr>
-    connection connect(Pmf && pmf, Ptr && ptr) {
+    template <typename Pmf, typename Ptr>
+    std::enable_if_t<!trait::is_callable_v<arg_list, Pmf> &&
+                     trait::is_weak_ptr_compatible_v<Ptr>, connection>
+    connect(Pmf && pmf, Ptr && ptr) {
         using trait::to_weak;
         auto w = to_weak(std::forward<Ptr>(ptr));
         using slot_t = detail::slot_pmf_tracked<Pmf, decltype(w), arg_list>;
@@ -641,10 +641,10 @@ public:
      * @param ptr a trackable object pointer
      * @return a connection object that can be used to interact with the slot
      */
-    template <typename Callable, typename Trackable,
-              std::enable_if_t<trait::is_callable_v<arg_list, Callable> &&
-                               trait::is_weak_ptr_compatible_v<Trackable>>* = nullptr>
-    connection connect(Callable && c, Trackable && ptr) {
+    template <typename Callable, typename Trackable>
+    std::enable_if_t<trait::is_callable_v<arg_list, Callable> &&
+                     trait::is_weak_ptr_compatible_v<Trackable>, connection>
+    connect(Callable && c, Trackable && ptr) {
         using trait::to_weak;
         auto w = to_weak(std::forward<Trackable>(ptr));
         using slot_t = detail::slot_tracked<Callable, decltype(w), arg_list>;
