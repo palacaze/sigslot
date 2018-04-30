@@ -1,11 +1,12 @@
 cmake_minimum_required(VERSION 3.6)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
-project(pal_sigslot VERSION 0.0.1 LANGUAGES CXX)
+project(pal_sigslot VERSION 1.0.0 LANGUAGES CXX)
 
 ### compiler support
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(CheckCXXCompilerFlag)
 macro(pal_test_compiler_flag flag)
