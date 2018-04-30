@@ -240,5 +240,144 @@ int main() {
 
 ### Connection management
 
+#### Connection object
+
+What was not made apparent until now is that `signal::connect()` actually returns a `sigslot::connection` object that may be used to manage the behaviour and lifetime of a signal-slot connection. `sigslot::connection` is a lightweight object (basically a `std::weak_ptr`) that allows interaction with an ongoing signal-slot connection and exposes the following features:
+
+- Status querying, that is testing whether a connection is valid, ongoing or facing destruction,
+- Connection (un)blocking, which allows to temporarily disable the invocation of a slot when a signal is emitted,
+- Disconnection of a slot, the destruction of a connection previously created via `signal::connect()`.
+
+A `sigslot::connection` does not tie a connection to a scope: this is not a RAII object, which explains why it can be copied. It can be however implicitly converted into a `sigslot::scoped_connection` which destroys the connection when going out of scope.
+
+Here is an example illustrating some of the features:
+
+```cpp
+#include <sigslot/signal.hpp>
+#include <string>
+
+int i = 0;
+
+void f() { i += 1; }
+
+int main() {
+    sigslot::signal<> sig;
+
+    // keep a sigslot::connection object
+    auto c1 = sig.connect(f);
+
+    // disconnection
+    sig();  // i == 1
+    c1.disconnect();
+    sig();  // i == 1
+
+    // scope based disconnection
+    {
+        sigslot::scoped_connection sc = sig.connect(f);
+        sig();  // i == 2
+    }
+
+    sig();  // i == 2;
+
+
+    // connection blocking
+    auto c2 = sig.connect(f);
+    sig();  // i == 3
+    c2.block();
+    sig();  // i == 3
+    c2.unblock();
+    sig();  // i == 4
+}
+```
+
+#### Extended connection signature
+
+Moreover, Sigslot supports an extended slot signature with an additional `sigslot::connection` reference as first argument, which permits connection management from inside the slot. This extended signature is accessible using the `connect_extended()` method.
+
+```cpp
+#include <sigslot/signal.hpp>
+
+int main() {
+    int i = 0;
+    sigslot::signal<> sig;
+
+    // extended connection
+    auto f = [](auto &con) {
+        i += 1;             // do work
+        con.disconnect();   // then disconnects
+    };
+
+    sig.connect_extended(f);
+    sig();  // i == 1
+    sig();  // i == 1 because f was disconnected
+}
+```
+
+#### Automatic slot lifetime tracking
+
+The user must make sure that the lifetime of a slot exceeds the one of a signal, which may get tedious in complex software. To simplify this task, Sigslot can automatically disconnect slot object whose lifetime it is able to track. In order to do that, the slot must be convertible to a weak pointer of some form.
+
+`std::shared_ptr` and `std::weak_ptr` are supported out of the box, and adapters are provided to support `boost::shared_ptr`, `boost::weak_ptr` and Qt `QSharedPointer`, `QWeakPointer` and any class deriving from `QObject`.
+
+Other trackable objects can be added by declaring a `to_weak()` adapter function.
+
+```cpp
+#include <sigslot/signal.hpp>
+#include <sigslot/adapter/qt.hpp>
+
+int sum = 0;
+
+struct s {
+    void f(int i) { sum += i; }
+};
+
+class MyObject : public QObject {
+    Q_OBJECT
+public:
+    void add(int i) const { sum += i; }
+};
+
+int main() {
+    sum = 0;
+    signal<int> sig;
+
+    // track lifetime of object and also connect to a member function
+    auto p = std::make_shared<s>();
+    sig.connect(&s::f, p);
+
+    sig(1);     // sum == 1
+    p.reset();
+    sig(1);     // sum == 1
+
+    // track an unrelated object lifetime
+    struct dummy;
+    auto l = [&](int i) { sum += i; };
+
+    auto d = std::make_shared<dummy>();
+    sig.connect(l, d);
+    sig(1);     // sum == 2
+    d.reset();
+    sig(1);     // sum == 2
+
+    // track a QObject
+    {
+        MyObject o;
+        sig.connect(&MyObject::add, &o);
+
+        sig(1); // sum == 3
+    }
+
+    sig(1);     // sum == 3
+}
+```
+
 ### Thread safety
+
+`sigslot::signal` is a typedef to the more general `sigslot::signal_base` template class, whose first template argument must be a Lockable type. This type will dictate the locking policy of the class.
+
+Sigslot offers 3 typedefs,
+
+- `sigslot::signal` usable from multiple threads and uses std::mutex as a lockable. In particular, connection, disconnection, emission and slot execution are thread safe. What is not safe however is emitting recursively from a slot.
+- `sigslot::signal_r` is also thread safe, but can also cope with recursive emission as it is locked with a std::recursive_mutex.
+- `sigslot::signal_st` is a non thread-safe alternative, it trades safety for slightly faster operation.
 
