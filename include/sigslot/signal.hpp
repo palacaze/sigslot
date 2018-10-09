@@ -4,6 +4,7 @@
 #include <utility>
 #include <mutex>
 #include <atomic>
+#include <vector>
 
 namespace sigslot {
 
@@ -500,28 +501,37 @@ public:
      */
     template <typename... A>
     void operator()(A && ... a) {
-        lock_type lock(m_mutex);
+        std::vector<slot_ptr> to_call;
+        to_call.reserve(32);
         slot_ptr *prev = nullptr;
-        slot_ptr *curr = m_slots ? &m_slots : nullptr;
 
-        while (curr) {
-            // call non blocked, non connected slots
-            if ((*curr)->connected()) {
-                if (!m_block && !(*curr)->blocked())
-                    (*curr)->operator()(std::forward<A>(a)...);
-                prev = curr;
-                curr = (*curr)->next ? &((*curr)->next) : nullptr;
-            }
-            // remove slots marked as disconnected
-            else {
-                if (prev) {
-                    (*prev)->next = (*curr)->next;
-                    curr = (*prev)->next ? &((*prev)->next) : nullptr;
-                }
-                else
+        {
+            lock_type lock(m_mutex);
+            slot_ptr *curr = m_slots ? &m_slots : nullptr;
+
+            while (curr) {
+                // collect the list of non blocked, non disconnected slots
+                if ((*curr)->connected()) {
+                    if (!m_block && !(*curr)->blocked())
+                        to_call.push_back(*curr);
+                    prev = curr;
                     curr = (*curr)->next ? &((*curr)->next) : nullptr;
+                }
+                // remove slots marked as disconnected
+                else {
+                    if (prev) {
+                        (*prev)->next = (*curr)->next;
+                        curr = (*prev)->next ? &((*prev)->next) : nullptr;
+                    }
+                    else
+                        curr = (*curr)->next ? &((*curr)->next) : nullptr;
+                }
             }
         }
+
+        // call the actual valid slots out of the lock
+        for (auto &sl : to_call)
+            sl->operator()(std::forward<A>(a)...);
     }
 
     /**
