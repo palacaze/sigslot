@@ -6,7 +6,7 @@ macro(pal_create_test target ut)
     add_executable(${target} EXCLUDE_FROM_ALL "${ut}")
     add_test(${target} ${target})
     add_dependencies(tests ${target})
-    target_link_libraries(${target} Pal::Sigslot)
+    target_link_libraries(${target} Pal::Sigslot Threads::Threads)
     pal_set_properties(${target} PRIVATE)
 endmacro()
 

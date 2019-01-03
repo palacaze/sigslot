@@ -62,7 +62,7 @@ if(COMPILE_TESTS)
     # optional test of Qt bridge
     find_package(Qt5 COMPONENTS Core Widgets Gui QUIET)
 
-    find_package(Threads)
+    find_package(Threads REQUIRED)
 
     enable_testing()
     add_subdirectory(test EXCLUDE_FROM_ALL)
