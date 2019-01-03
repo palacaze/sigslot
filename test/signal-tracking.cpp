@@ -30,11 +30,11 @@ void test_track_shared() {
     signal<int> sig;
 
     auto s1 = std::make_shared<s>();
-    sig.connect(&s::f1, s1);
+    auto conn1 = sig.connect(&s::f1, s1);
 
     auto s2 = std::make_shared<s>();
     std::weak_ptr<s> w2 = s2;
-    sig.connect(&s::f2, w2);
+    auto conn2 = sig.connect(&s::f2, w2);
 
     sig(1);
     assert(sum == 3);
@@ -42,10 +42,38 @@ void test_track_shared() {
     s1.reset();
     sig(1);
     assert(sum == 5);
+    assert(!conn1.valid());
 
     s2.reset();
     sig(1);
     assert(sum == 5);
+    assert(!conn2.valid());
+}
+
+// bug #2 remove last slot first
+void test_track_shared_reversed() {
+    sum = 0;
+    signal<int> sig;
+
+    auto s1 = std::make_shared<s>();
+    auto conn1 = sig.connect(&s::f1, s1);
+
+    auto s2 = std::make_shared<s>();
+    std::weak_ptr<s> w2 = s2;
+    auto conn2 = sig.connect(&s::f2, w2);
+
+    sig(1);
+    assert(sum == 3);
+
+    s2.reset();
+    sig(1);
+    assert(sum == 4);
+    assert(!conn2.valid());
+
+    s1.reset();
+    sig(1);
+    assert(sum == 4);
+    assert(!conn1.valid());
 }
 
 void test_track_other() {
@@ -53,11 +81,11 @@ void test_track_other() {
     signal<int> sig;
 
     auto d1 = std::make_shared<dummy>();
-    sig.connect(f1, d1);
+    auto conn1 = sig.connect(f1, d1);
 
     auto d2 = std::make_shared<dummy>();
     std::weak_ptr<dummy> w2 = d2;
-    sig.connect(o1(), w2);
+    auto conn2 = sig.connect(o1(), w2);
 
     sig(1);
     assert(sum == 3);
@@ -65,10 +93,12 @@ void test_track_other() {
     d1.reset();
     sig(1);
     assert(sum == 5);
+    assert(!conn1.valid());
 
     d2.reset();
     sig(1);
     assert(sum == 5);
+    assert(!conn2.valid());
 }
 
 void test_track_overloaded_function_object() {
@@ -77,23 +107,25 @@ void test_track_overloaded_function_object() {
     signal<double> sig1;
 
     auto d1 = std::make_shared<dummy>();
-    sig.connect(oo{}, d1);
+    auto conn1 = sig.connect(oo{}, d1);
     sig(1);
     assert(sum == 1);
 
     d1.reset();
     sig(1);
     assert(sum == 1);
+    assert(!conn1.valid());
 
     auto d2 = std::make_shared<dummy>();
     std::weak_ptr<dummy> w2 = d2;
-    sig1.connect(oo{}, w2);
+    auto conn2 = sig1.connect(oo{}, w2);
     sig1(1);
     assert(sum == 5);
 
     d2.reset();
     sig1(1);
     assert(sum == 5);
+    assert(!conn2.valid());
 }
 
 void test_track_generic_lambda() {
@@ -129,6 +161,7 @@ void test_track_generic_lambda() {
 
 int main() {
     test_track_shared();
+    test_track_shared_reversed();
     test_track_other();
     test_track_overloaded_function_object();
     test_track_generic_lambda();

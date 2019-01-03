@@ -223,6 +223,7 @@ void test_disconnection() {
         sc.disconnect();
         sig(1);
         assert(sum == 1);
+        assert(!sc.valid());
     }
 
     // test removing first connected
@@ -241,6 +242,7 @@ void test_disconnection() {
         sc.disconnect();
         sig(1);
         assert(sum == 6);
+        assert(!sc.valid());
     }
 
     // test removing last connected
@@ -259,6 +261,7 @@ void test_disconnection() {
         sc.disconnect();
         sig(1);
         assert(sum == 5);
+        assert(!sc.valid());
     }
 }
 
