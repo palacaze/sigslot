@@ -20,7 +20,7 @@ struct object {
     }
 
     T v;
-    sigslot::signal_r<T> sig;
+    sigslot::signal<T> sig;
 };
 
 void test_recursive() {
@@ -38,7 +38,7 @@ void test_recursive() {
 void test_self_recursive() {
     int i = 0;
 
-    sigslot::signal_r<int> s;
+    sigslot::signal<int> s;
     s.connect([&] (int v) {
         if (i < 10) {
             i++;

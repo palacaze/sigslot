@@ -735,21 +735,10 @@ using signal_st = signal_base<detail::null_mutex, T...>;
  * Specialization of signal_base to be used in multi-threaded contexts.
  * Slot connection, disconnection and signal emission are thread-safe.
  *
- * Beware of accidentally using recursive signal emission or cycles between
- * two or more signals in your code. Locking std::mutex more than once is
- * undefined behaviour, even if it "seems to work somehow". Use signal_r
- * instead for that use case.
+ * Recursive signal emission and emission cycles are supported too.
  */
 template <typename... T>
 using signal = signal_base<std::mutex, T...>;
-
-/**
- * Specialization of signal_base to be used in multi-threaded contexts, allowing
- * for recursive signal emission and emission cycles.
- * Slot connection, disconnection and signal emission are thread-safe.
- */
-template <typename... T>
-using signal_r = signal_base<std::recursive_mutex, T...>;
 
 } // namespace sigslot
 

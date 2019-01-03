@@ -375,9 +375,8 @@ int main() {
 
 `sigslot::signal` is a typedef to the more general `sigslot::signal_base` template class, whose first template argument must be a Lockable type. This type will dictate the locking policy of the class.
 
-Sigslot offers 3 typedefs,
+Sigslot offers 2 typedefs,
 
-- `sigslot::signal` usable from multiple threads and uses std::mutex as a lockable. In particular, connection, disconnection, emission and slot execution are thread safe. What is not safe however is emitting recursively from a slot.
-- `sigslot::signal_r` is also thread safe, but can also cope with recursive emission as it is locked with a std::recursive_mutex.
+- `sigslot::signal` usable from multiple threads and uses std::mutex as a lockable. In particular, connection, disconnection, emission and slot execution are thread safe. It is also safe with recursive signal emission.
 - `sigslot::signal_st` is a non thread-safe alternative, it trades safety for slightly faster operation.
 
