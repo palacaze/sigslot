@@ -96,7 +96,7 @@ public:
 
     virtual ~slot_state() = default;
 
-    bool connected() const noexcept { return m_connected; }
+    virtual bool connected() const noexcept { return m_connected; }
     bool disconnect() noexcept { return m_connected.exchange(false); }
 
     bool blocked() const noexcept { return m_blocked.load(); }
@@ -136,13 +136,13 @@ private:
     connection_blocker(std::weak_ptr<detail::slot_state> s) noexcept
         : m_state{std::move(s)}
     {
-        auto d = m_state.lock();
-        if (d) d->block();
+        if (auto d = m_state.lock())
+            d->block();
     }
 
     void release() noexcept {
-        auto d = m_state.lock();
-        if (d) d->unblock();
+        if (auto d = m_state.lock())
+            d->unblock();
     }
 
 private:
@@ -187,14 +187,12 @@ public:
     }
 
     void block() noexcept {
-        auto d = m_state.lock();
-        if(d)
+        if (auto d = m_state.lock())
             d->block();
     }
 
     void unblock() noexcept {
-        auto d = m_state.lock();
-        if(d)
+        if (auto d = m_state.lock())
             d->unblock();
     }
 
@@ -375,12 +373,14 @@ public:
           ptr{std::forward<P>(p)}
     {}
 
+    bool connected() const noexcept override {
+        return !ptr.expired() && slot_state::connected();
+    }
+
     virtual void call_slot(Args ...args) override {
-        if (! slot_state::connected())
-            return;
         if (ptr.expired())
             slot_state::disconnect();
-        else
+        if (slot_state::connected())
             func(args...);
     }
 
@@ -405,13 +405,17 @@ public:
           ptr{std::forward<P>(p)}
     {}
 
+    bool connected() const noexcept override {
+        return !ptr.expired() && slot_state::connected();
+    }
+
     virtual void call_slot(Args ...args) override {
-        if (! slot_state::connected())
-            return;
         auto sp = ptr.lock();
-        if (!sp)
+        if (!sp) {
             slot_state::disconnect();
-        else
+            return;
+        }
+        if (slot_state::connected())
             ((*sp).*pmf)(args...);
     }
 
