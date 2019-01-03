@@ -274,8 +274,6 @@ public:
         if (slot_state::connected() && !slot_state::blocked())
             call_slot(std::forward<U>(u)...);
     }
-
-    slot_ptr<Args...> next;
 };
 
 template <typename, typename...> class slot {};
@@ -499,39 +497,38 @@ public:
      *
      * @param a... arguments to emit
      */
-    template <typename... A>
-    void operator()(A && ... a) {
-        std::vector<slot_ptr> to_call;
-        to_call.reserve(32);
-        slot_ptr *prev = nullptr;
+    void operator()(T ...a) {
+        std::vector<slot_ptr> copy;
 
         {
             lock_type lock(m_mutex);
-            slot_ptr *curr = m_slots ? &m_slots : nullptr;
+            if (m_slots.empty())
+                return;
 
-            while (curr) {
-                // collect the list of non blocked, non disconnected slots
-                if ((*curr)->connected()) {
-                    if (!m_block && !(*curr)->blocked())
-                        to_call.push_back(*curr);
-                    prev = curr;
-                    curr = (*curr)->next ? &((*curr)->next) : nullptr;
+            copy.reserve(m_slots.size());
+
+            auto it = std::begin(m_slots);
+            auto end = std::end(m_slots);
+
+            while (it != end) {
+                if ((*it)->connected()) {
+                    copy.push_back(*it);
+                    ++it;
                 }
-                // remove slots marked as disconnected
                 else {
-                    if (prev) {
-                        (*prev)->next = (*curr)->next;
-                        curr = (*prev)->next ? &((*prev)->next) : nullptr;
-                    }
-                    else
-                        curr = (*curr)->next ? &((*curr)->next) : nullptr;
+                    --end;
+                    std::iter_swap(it, end);
                 }
             }
+
+            m_slots.erase(end, std::end(m_slots));
         }
 
-        // call the actual valid slots out of the lock
-        for (auto &sl : to_call)
-            sl->operator()(std::forward<A>(a)...);
+        if (m_block)
+            return;
+
+        for (const auto &s : copy)
+            s->operator()(a...);
     }
 
     /**
@@ -708,17 +705,16 @@ private:
     template <typename S>
     void add_slot(S &s) {
         lock_type lock(m_mutex);
-        s->next = m_slots;
-        m_slots = s;
+        m_slots.push_back(s);
     }
 
     void clear() {
-        m_slots.reset();
+        m_slots.clear();
     }
 
 private:
-    slot_ptr m_slots;
     Lockable m_mutex;
+    std::vector<slot_ptr> m_slots;
     std::atomic<bool> m_block;
 };
 
