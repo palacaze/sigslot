@@ -85,6 +85,25 @@ constexpr bool is_callable_v = detail::is_callable<T..., L>::value;
 
 namespace detail {
 
+/**
+ * std::make_shared instantiates a lot a templates, and makes both compilation time
+ * and executable size far bigger than they need to be. We offer a make_shared
+ * equivalent that will avoid most instantiations with the following tradeoffs:
+ * - Not exception safe,
+ * - Allocates a separate control block, and will thus make the code slower.
+ */
+#ifdef SIGSLOT_REDUCE_CODE_SIZE
+template<typename B, typename D, typename ...Arg>
+inline std::shared_ptr<B> make_shared(Arg && ... arg) {
+    return std::shared_ptr<B>(static_cast<B*>(new D(std::forward<Arg>(arg)...)));
+}
+#else
+template<typename B, typename D, typename ...Arg>
+inline std::shared_ptr<B> make_shared(Arg && ... arg) {
+    return std::static_pointer_cast<B>(std::make_shared<D>(std::forward<Arg>(arg)...));
+}
+#endif
+
 /* slot_state holds slot type independent state, to be used to interact with
  * slots indirectly through connection and scoped_connection objects.
  */
@@ -458,6 +477,7 @@ struct null_mutex {
 template <typename Lockable, typename... T>
 class signal_base {
     using lock_type = std::unique_lock<Lockable>;
+    using slot_base = detail::slot_base<T...>;
     using slot_ptr = detail::slot_ptr<T...>;
 
 public:
@@ -549,9 +569,10 @@ public:
     std::enable_if_t<trait::is_callable_v<arg_list, Callable>, connection>
     connect(Callable && c) {
         using slot_t = detail::slot<Callable, arg_list>;
-        auto s = std::make_shared<slot_t>(std::forward<Callable>(c));
-        add_slot(s);
-        return connection(s);
+        auto s = detail::make_shared<slot_base, slot_t>(std::forward<Callable>(c));
+        connection conn(s);
+        add_slot(std::move(s));
+        return conn;
     }
 
     /**
@@ -567,10 +588,11 @@ public:
     std::enable_if_t<trait::is_callable_v<ext_arg_list, Callable>, connection>
     connect_extended(Callable && c) {
         using slot_t = detail::slot<Callable, ext_arg_list>;
-        auto s = std::make_shared<slot_t>(std::forward<Callable>(c));
-        s->conn = connection(s);
-        add_slot(s);
-        return connection(s);
+        auto s = detail::make_shared<slot_base, slot_t>(std::forward<Callable>(c));
+        connection conn(s);
+        std::static_pointer_cast<slot_t>(s)->conn = conn;
+        add_slot(std::move(s));
+        return conn;
     }
 
     /**
@@ -585,9 +607,10 @@ public:
                      !trait::is_weak_ptr_compatible_v<Ptr>, connection>
     connect(Pmf && pmf, Ptr && ptr) {
         using slot_t = detail::slot<Pmf, Ptr, arg_list>;
-        auto s = std::make_shared<slot_t>(std::forward<Pmf>(pmf), std::forward<Ptr>(ptr));
-        add_slot(s);
-        return connection(s);
+        slot_ptr s = detail::make_shared<slot_base, slot_t>(std::forward<Pmf>(pmf), std::forward<Ptr>(ptr));
+        connection conn(s);
+        add_slot(std::move(s));
+        return conn;
     }
 
     /**
@@ -602,10 +625,11 @@ public:
                      !trait::is_weak_ptr_compatible_v<Ptr>, connection>
     connect_extended(Pmf && pmf, Ptr && ptr) {
         using slot_t = detail::slot<Pmf, Ptr, ext_arg_list>;
-        auto s = std::make_shared<slot_t>(std::forward<Pmf>(pmf), std::forward<Ptr>(ptr));
-        s->conn = connection(s);
-        add_slot(s);
-        return connection(s);
+        auto s = detail::make_shared<slot_base, slot_t>(std::forward<Pmf>(pmf), std::forward<Ptr>(ptr));
+        connection conn(s);
+        std::static_pointer_cast<slot_t>(s)->conn = conn;
+        add_slot(std::move(s));
+        return conn;
     }
 
     /**
@@ -631,9 +655,10 @@ public:
         using trait::to_weak;
         auto w = to_weak(std::forward<Ptr>(ptr));
         using slot_t = detail::slot_pmf_tracked<Pmf, decltype(w), arg_list>;
-        auto s = std::make_shared<slot_t>(std::forward<Pmf>(pmf), w);
-        add_slot(s);
-        return connection(s);
+        auto s = detail::make_shared<slot_base, slot_t>(std::forward<Pmf>(pmf), w);
+        connection conn(s);
+        add_slot(std::move(s));
+        return conn;
     }
 
     /**
@@ -659,9 +684,10 @@ public:
         using trait::to_weak;
         auto w = to_weak(std::forward<Trackable>(ptr));
         using slot_t = detail::slot_tracked<Callable, decltype(w), arg_list>;
-        auto s = std::make_shared<slot_t>(std::forward<Callable>(c), w);
-        add_slot(s);
-        return connection(s);
+        auto s = detail::make_shared<slot_base, slot_t>(std::forward<Callable>(c), w);
+        connection conn(s);
+        add_slot(std::move(s));
+        return conn;
     }
 
     /**
@@ -706,10 +732,9 @@ public:
     }
 
 private:
-    template <typename S>
-    void add_slot(S &s) {
+    void add_slot(slot_ptr &&s) {
         lock_type lock(m_mutex);
-        m_slots.push_back(s);
+        m_slots.push_back(std::move(s));
     }
 
     void clear() {

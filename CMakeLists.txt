@@ -25,11 +25,11 @@ pal_test_compiler_flag("fdiagnostics-color=always")
 ### options
 option(COMPILE_EXAMPLES "Compile optional exemples" ON)
 option(COMPILE_TESTS "Compile tests" ON)
+option(REDUCE_CODE_SIZE "Reduce code size and compilation time at the expanse of slower code" OFF)
 
 ### common properties
 function(pal_set_properties target mode)
     set_target_properties(${target} PROPERTIES CXX_EXTENSIONS NO)
-    target_compile_definitions(${target} ${mode} $<$<CONFIG:Release>:NDEBUG>)
     target_compile_options(${target} ${mode} ${PAL_COMPILER_FLAGS})
 endfunction()
 
@@ -40,7 +40,8 @@ target_include_directories(sigslot INTERFACE
     $<INSTALL_INTERFACE:include>
 )
 
-set_target_properties (sigslot PROPERTIES EXPORT_NAME Sigslot)
+target_compile_definitions(sigslot INTERFACE $<$<BOOL:${REDUCE_CODE_SIZE}>:SIGSLOT_REDUCE_CODE_SIZE>)
+set_target_properties(sigslot PROPERTIES EXPORT_NAME Sigslot)
 add_library(Pal::Sigslot ALIAS sigslot)
 
 include(GNUInstallDirs)
