@@ -1,3 +1,4 @@
+#include "test-common.h"
 #include <boost/make_shared.hpp>
 #include <sigslot/adapter/boost.hpp>
 #include <sigslot/signal.hpp>

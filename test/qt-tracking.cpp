@@ -1,3 +1,4 @@
+#include "test-common.h"
 #include <sigslot/adapter/qt.hpp>
 #include <sigslot/signal.hpp>
 #include <cassert>

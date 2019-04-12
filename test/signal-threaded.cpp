@@ -1,3 +1,4 @@
+#include "test-common.h"
 #include <sigslot/signal.hpp>
 #include <thread>
 #include <fstream>

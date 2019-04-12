@@ -1,3 +1,4 @@
+#include "test-common.h"
 #include <type_traits>
 #include <sigslot/signal.hpp>
 
