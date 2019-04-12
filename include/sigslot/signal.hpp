@@ -504,19 +504,17 @@ public:
     void operator()(T ...a) {
         std::vector<slot_ptr> copy;
 
+        // remove disconnected slots first
         {
             lock_type lock(m_mutex);
             if (m_slots.empty())
                 return;
-
-            copy.reserve(m_slots.size());
 
             auto it = std::begin(m_slots);
             auto end = std::end(m_slots);
 
             while (it != end) {
                 if ((*it)->connected()) {
-                    copy.push_back(*it);
                     ++it;
                 }
                 else {
@@ -526,6 +524,8 @@ public:
             }
 
             m_slots.erase(end, std::end(m_slots));
+            // copy the slots, which should be called out of the lock
+            copy = m_slots;
         }
 
         if (m_block)
