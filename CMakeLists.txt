@@ -66,6 +66,6 @@ if(COMPILE_TESTS)
     find_package(Threads REQUIRED)
 
     enable_testing()
-    add_subdirectory(test EXCLUDE_FROM_ALL)
+    add_subdirectory(test)
 endif()
 
