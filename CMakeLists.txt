@@ -25,7 +25,7 @@ pal_test_compiler_flag("fdiagnostics-color=always")
 ### options
 option(COMPILE_EXAMPLES "Compile optional exemples" ON)
 option(COMPILE_TESTS "Compile tests" ON)
-option(REDUCE_CODE_SIZE "Reduce code size and compilation time at the expanse of slower code" OFF)
+option(REDUCE_CODE_SIZE "Reduce code size and compilation time at the expanse of marginally slower code" OFF)
 
 ### common properties
 function(pal_set_properties target mode)
