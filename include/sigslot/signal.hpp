@@ -116,6 +116,7 @@ public:
     virtual ~slot_state() = default;
 
     virtual bool connected() const noexcept { return m_connected; }
+
     bool disconnect() noexcept {
         bool ret = m_connected.exchange(false);
         do_disconnect();
@@ -270,27 +271,31 @@ private:
     {}
 };
 
-template <typename Lockable, typename... Args>
-class signal_base;
 
 namespace detail {
 
-template <typename Lockable, typename...>
+// interface for cleanable objects
+struct cleanable {
+    virtual ~cleanable() = default;
+    virtual void clean() = 0;
+};
+
+template <typename...>
 class slot_base;
 
-template <typename Lockable, typename... T>
-using slot_ptr = std::shared_ptr<slot_base<Lockable, T...>>;
+template <typename... T>
+using slot_ptr = std::shared_ptr<slot_base<T...>>;
 
 /* A base class for slot objects. This base type only depends on slot argument
  * types, it will be used as an element in an intrusive singly-linked list of
  * slots, hence the public next member.
  */
-template <typename Lockable, typename... Args>
+template <typename... Args>
 class slot_base : public slot_state {
 public:
     using base_types = trait::typelist<Args...>;
 
-    slot_base(signal_base<Lockable, Args...> &s) : sig(s) {}
+    slot_base(cleanable &c) : cleaner(c) {}
     virtual ~slot_base() = default;
 
     // method effectively responsible for calling the "slot" function with
@@ -305,23 +310,23 @@ public:
 
 protected:
     void do_disconnect() final {
-        sig.cleanup();
+        cleaner.clean();
     }
 
 private:
-    signal_base<Lockable, Args...> &sig;
+    cleanable &cleaner;
 };
 
 /*
  * A slot object holds state information, and a callable to to be called
  * whenever the function call operator of its slot_base base class is called.
  */
-template <typename Func, typename Lockable, typename... Args>
-class slot : public slot_base<Lockable, Args...> {
+template <typename Func, typename... Args>
+class slot : public slot_base<Args...> {
 public:
     template <typename F>
-    constexpr slot(signal_base<Lockable, Args...> &s, F && f)
-        : slot_base<Lockable, Args...>(s)
+    constexpr slot(cleanable &c, F && f)
+        : slot_base<Args...>(c)
         , func{std::forward<F>(f)} {}
 
     virtual void call_slot(Args ...args) override {
@@ -335,12 +340,12 @@ private:
 /*
  * Variation of slot that prepends a connection object to the callable
  */
-template <typename Func, typename Lockable, typename... Args>
-class slot_extended : public slot_base<Lockable, Args...> {
+template <typename Func, typename... Args>
+class slot_extended : public slot_base<Args...> {
 public:
     template <typename F>
-    constexpr slot_extended(signal_base<Lockable, Args...> &s, F && f)
-        : slot_base<Lockable, Args...>(s)
+    constexpr slot_extended(cleanable &c, F && f)
+        : slot_base<Args...>(c)
         , func{std::forward<F>(f)} {}
 
     virtual void call_slot(Args ...args) override {
@@ -358,12 +363,12 @@ private:
  * function to be called whenever the function call operator of its slot_base
  * base class is called.
  */
-template <typename Pmf, typename Ptr, typename Lockable, typename... Args>
-class slot_pmf : public slot_base<Lockable, Args...> {
+template <typename Pmf, typename Ptr, typename... Args>
+class slot_pmf : public slot_base<Args...> {
 public:
     template <typename F, typename P>
-    constexpr slot_pmf(signal_base<Lockable, Args...> &s, F && f, P && p)
-        : slot_base<Lockable, Args...>(s)
+    constexpr slot_pmf(cleanable &c, F && f, P && p)
+        : slot_base<Args...>(c)
         , pmf{std::forward<F>(f)}
         , ptr{std::forward<P>(p)} {}
 
@@ -379,12 +384,12 @@ private:
 /*
  * Variation of slot that prepends a connection object to the callable
  */
-template <typename Pmf, typename Ptr, typename Lockable, typename... Args>
-class slot_pmf_extended : public slot_base<Lockable, Args...> {
+template <typename Pmf, typename Ptr, typename... Args>
+class slot_pmf_extended : public slot_base<Args...> {
 public:
     template <typename F, typename P>
-    constexpr slot_pmf_extended(signal_base<Lockable, Args...> &s, F && f, P && p)
-        : slot_base<Lockable, Args...>(s)
+    constexpr slot_pmf_extended(cleanable &c, F && f, P && p)
+        : slot_base<Args...>(c)
         , pmf{std::forward<F>(f)}
         , ptr{std::forward<P>(p)} {}
 
@@ -404,12 +409,12 @@ private:
  * through a weak pointer in order to automatically disconnect the slot
  * on said object destruction.
  */
-template <typename Func, typename WeakPtr, typename Lockable, typename... Args>
-class slot_tracked : public slot_base<Lockable, Args...> {
+template <typename Func, typename WeakPtr, typename... Args>
+class slot_tracked : public slot_base<Args...> {
 public:
     template <typename F, typename P>
-    constexpr slot_tracked(signal_base<Lockable, Args...> &s, F && f, P && p)
-        : slot_base<Lockable, Args...>(s)
+    constexpr slot_tracked(cleanable &c, F && f, P && p)
+        : slot_base<Args...>(c)
         , func{std::forward<F>(f)}
         , ptr{std::forward<P>(p)}
     {}
@@ -435,12 +440,12 @@ private:
  * the life of a supplied object through a weak pointer in order to automatically
  * disconnect the slot on said object destruction.
  */
-template <typename Pmf, typename WeakPtr, typename Lockable, typename... Args>
-class slot_pmf_tracked : public slot_base<Lockable, Args...> {
+template <typename Pmf, typename WeakPtr, typename... Args>
+class slot_pmf_tracked : public slot_base<Args...> {
 public:
     template <typename F, typename P>
-    constexpr slot_pmf_tracked(signal_base<Lockable, Args...> &s, F && f, P && p)
-        : slot_base<Lockable, Args...>(s)
+    constexpr slot_pmf_tracked(cleanable &c, F && f, P && p)
+        : slot_base<Args...>(c)
         , pmf{std::forward<F>(f)}
         , ptr{std::forward<P>(p)}
     {}
@@ -496,10 +501,10 @@ struct null_mutex {
  * @tparam T... the argument types of the emitting and slots functions.
  */
 template <typename Lockable, typename... T>
-class signal_base {
+class signal_base : public detail::cleanable {
     using lock_type = std::unique_lock<Lockable>;
-    using slot_base = detail::slot_base<Lockable, T...>;
-    using slot_ptr = detail::slot_ptr<Lockable, T...>;
+    using slot_base = detail::slot_base<T...>;
+    using slot_ptr = detail::slot_ptr<T...>;
 
 public:
     using arg_list = trait::typelist<T...>;
@@ -571,7 +576,7 @@ public:
     template <typename Callable>
     std::enable_if_t<trait::is_callable_v<arg_list, Callable>, connection>
     connect(Callable && c) {
-        using slot_t = detail::slot<Callable, Lockable, T...>;
+        using slot_t = detail::slot<Callable, T...>;
         auto s = detail::make_shared<slot_base, slot_t>(*this, std::forward<Callable>(c));
         connection conn(s);
         add_slot(std::move(s));
@@ -590,7 +595,7 @@ public:
     template <typename Callable>
     std::enable_if_t<trait::is_callable_v<ext_arg_list, Callable>, connection>
     connect_extended(Callable && c) {
-        using slot_t = detail::slot_extended<Callable, Lockable, T...>;
+        using slot_t = detail::slot_extended<Callable, T...>;
         auto s = detail::make_shared<slot_base, slot_t>(*this, std::forward<Callable>(c));
         connection conn(s);
         std::static_pointer_cast<slot_t>(s)->conn = conn;
@@ -609,7 +614,7 @@ public:
     std::enable_if_t<trait::is_callable_v<arg_list, Pmf, Ptr> &&
                      !trait::is_weak_ptr_compatible_v<Ptr>, connection>
     connect(Pmf && pmf, Ptr && ptr) {
-        using slot_t = detail::slot_pmf<Pmf, Ptr, Lockable, T...>;
+        using slot_t = detail::slot_pmf<Pmf, Ptr, T...>;
         slot_ptr s = detail::make_shared<slot_base, slot_t>(*this, std::forward<Pmf>(pmf), std::forward<Ptr>(ptr));
         connection conn(s);
         add_slot(std::move(s));
@@ -627,7 +632,7 @@ public:
     std::enable_if_t<trait::is_callable_v<ext_arg_list, Pmf, Ptr> &&
                      !trait::is_weak_ptr_compatible_v<Ptr>, connection>
     connect_extended(Pmf && pmf, Ptr && ptr) {
-        using slot_t = detail::slot_pmf_extended<Pmf, Ptr, Lockable, T...>;
+        using slot_t = detail::slot_pmf_extended<Pmf, Ptr, T...>;
         auto s = detail::make_shared<slot_base, slot_t>(*this, std::forward<Pmf>(pmf), std::forward<Ptr>(ptr));
         connection conn(s);
         std::static_pointer_cast<slot_t>(s)->conn = conn;
@@ -657,7 +662,7 @@ public:
     connect(Pmf && pmf, Ptr && ptr) {
         using trait::to_weak;
         auto w = to_weak(std::forward<Ptr>(ptr));
-        using slot_t = detail::slot_pmf_tracked<Pmf, decltype(w), Lockable, T...>;
+        using slot_t = detail::slot_pmf_tracked<Pmf, decltype(w), T...>;
         auto s = detail::make_shared<slot_base, slot_t>(*this, std::forward<Pmf>(pmf), w);
         connection conn(s);
         add_slot(std::move(s));
@@ -686,7 +691,7 @@ public:
     connect(Callable && c, Trackable && ptr) {
         using trait::to_weak;
         auto w = to_weak(std::forward<Trackable>(ptr));
-        using slot_t = detail::slot_tracked<Callable, decltype(w), Lockable, T...>;
+        using slot_t = detail::slot_tracked<Callable, decltype(w), T...>;
         auto s = detail::make_shared<slot_base, slot_t>(*this, std::forward<Callable>(c), w);
         connection conn(s);
         add_slot(std::move(s));
@@ -734,10 +739,11 @@ public:
         return m_block.load();
     }
 
+protected:
     /**
      * remove disconnected slots
      */
-    void cleanup() {
+    void clean() {
         lock_type lock(m_mutex);
         if (m_slots.empty())
             return;
