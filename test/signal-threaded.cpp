@@ -1,14 +1,13 @@
 #include "test-common.h"
 #include <sigslot/signal.hpp>
 #include <thread>
-#include <fstream>
 #include <atomic>
 #include <cassert>
 #include <array>
 
 using namespace sigslot;
 
-std::atomic<std::int64_t> sum{0};
+std::atomic<long int> sum{0};
 
 static void f(int i) { sum += i; }
 
@@ -25,13 +24,17 @@ static void connect_emit(signal<int> &sig) {
     }
 }
 
-static void connect_cross(signal<int> &s1, signal<int> &s2) {
+static void connect_cross(signal<int> &s1, signal<int> &s2, std::atomic<int> &go) {
     auto cross = s1.connect([&](int i) {
         if (i & 1)
             f(i);
         else
             s2(i+1);
     });
+
+    go++;
+    while (go != 3)
+        std::this_thread::yield();
 
     for (int i = 0; i < 1000000; ++i)
         s1(i);
@@ -63,7 +66,7 @@ static void test_threaded_emission() {
     for (auto &t : threads)
         t.join();
 
-    assert(sum == 100000);
+    assert(sum == 100000l);
 }
 
 // test for deadlocks in cross emission situation
@@ -73,14 +76,19 @@ static void test_threaded_crossed() {
     signal<int> sig1;
     signal<int> sig2;
 
-    std::thread t1(connect_cross, std::ref(sig1), std::ref(sig2));
-    std::thread t2(connect_cross, std::ref(sig2), std::ref(sig1));
+    std::atomic<int> go{0};
+
+    std::thread t1(connect_cross, std::ref(sig1), std::ref(sig2), std::ref(go));
+    std::thread t2(connect_cross, std::ref(sig2), std::ref(sig1), std::ref(go));
+
+    while (go != 2)
+        std::this_thread::yield();
+    go++;
 
     t1.join();
     t2.join();
 
-    std::ofstream fs("/tmp/test.txt");
-    fs << sum.load() << std::endl;
+    assert(sum == 1000000000000l);
 }
 
 int main() {

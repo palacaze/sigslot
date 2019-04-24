@@ -1,6 +1,5 @@
 #include <sigslot/signal.hpp>
 #include <cstdio>
-#include <functional>
 
 /*
  * This example is meant to test compilation time as well as object size
