@@ -83,8 +83,91 @@ constexpr bool is_callable_v = detail::is_callable<T..., L>::value;
 
 } // namespace trait
 
+template <typename, typename...>
+class signal_base;
 
 namespace detail {
+
+/**
+ * A simple copy on write container that will be used to improve slot lists
+ * access efficiency in a multithreaded context.
+ */
+template <typename T>
+class copy_on_write {
+    struct payload {
+        payload() = default;
+
+        template <typename... Args>
+        explicit payload(Args && ...args)
+            : value(std::forward<Args>(args)...)
+        {}
+
+        std::atomic<std::size_t> count{1};
+        T value;
+    };
+
+public:
+    using element_type = T;
+
+    copy_on_write()
+        : m_data(new payload)
+    {}
+
+    template <typename U>
+    copy_on_write(U&& x, std::enable_if_t<!std::is_same<std::decay_t<U>, copy_on_write>{}>* = nullptr)
+        : m_data(new payload(std::forward<U>(x)))
+    {}
+
+    copy_on_write(const copy_on_write &x) noexcept
+        : m_data(x.m_data)
+    {
+        ++m_data->count;
+    }
+
+    copy_on_write(copy_on_write && x) noexcept
+        : m_data(x.m_data)
+    {
+        x.m_data = nullptr;
+    }
+
+    ~copy_on_write() {
+        if (m_data && (--m_data->count == 0))
+            delete m_data;
+    }
+
+    copy_on_write& operator=(const copy_on_write &x) noexcept {
+        return *this = copy_on_write(x);
+    }
+
+    copy_on_write& operator=(copy_on_write && x) noexcept  {
+        auto tmp = std::move(x);
+        swap(*this, tmp);
+        return *this;
+    }
+
+    element_type& write() {
+        if (!unique())
+            *this = copy_on_write(read());
+        return m_data->value;
+    }
+
+    const element_type& read() const noexcept {
+        return m_data->value;
+    }
+
+    bool unique() const noexcept {
+        return m_data->count == 1;
+    }
+
+    friend inline void swap(copy_on_write &x, copy_on_write &y) noexcept {
+        using std::swap;
+        swap(x.m_data, y.m_data);
+    }
+
+private:
+    payload *m_data;
+};
+
 
 /**
  * std::make_shared instantiates a lot a templates, and makes both compilation time
@@ -135,6 +218,9 @@ protected:
     virtual void do_disconnect() {}
 
 private:
+    template <typename, typename...>
+    friend class ::sigslot::signal_base;
+
     std::atomic<bool> m_connected;
     std::atomic<bool> m_blocked;
 };
@@ -513,6 +599,7 @@ class signal_base : public detail::cleanable {
     using lock_type = std::unique_lock<Lockable>;
     using slot_base = detail::slot_base<T...>;
     using slot_ptr = detail::slot_ptr<T...>;
+    using cow_slot_list = detail::copy_on_write<std::vector<slot_ptr>>;
 
 public:
     using arg_list = trait::typelist<T...>;
@@ -559,15 +646,15 @@ public:
         if (m_block)
             return;
 
-        std::vector<slot_ptr> copy;
+        cow_slot_list copy;
 
-        // remove disconnected slots first
+        // copy slots to execute them out of the lock
         {
             lock_type lock(m_mutex);
             copy = m_slots;
         }
 
-        for (const auto &s : copy)
+        for (const auto &s : copy.read())
             s->operator()(a...);
     }
 
@@ -755,7 +842,7 @@ protected:
         lock_type lock(m_mutex);
         size_t idx = state->m_index;
 
-        auto &ss = m_slots;
+        auto &ss = m_slots.write();
 
         assert(!ss.empty());
         assert(idx < ss.size());
@@ -768,16 +855,19 @@ protected:
 private:
     void add_slot(slot_ptr &&s) {
         lock_type lock(m_mutex);
-        m_slots.push_back(std::move(s));
+        auto &ss = m_slots.write();
+        s->m_index = ss.size();
+        ss.push_back(std::move(s));
     }
 
+    // to be called under lock
     void clear() {
-        m_slots.clear();
+        m_slots.write().clear();
     }
 
 private:
     Lockable m_mutex;
-    std::vector<slot_ptr> m_slots;
+    cow_slot_list m_slots;
     std::atomic<bool> m_block;
 };
 
