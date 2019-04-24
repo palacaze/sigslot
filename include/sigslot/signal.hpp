@@ -176,15 +176,15 @@ private:
  * - Not exception safe,
  * - Allocates a separate control block, and will thus make the code slower.
  */
-#ifdef SIGSLOT_REDUCE_CODE_SIZE
+#ifdef SIGSLOT_DISABLE_CODE_SIZE_REDUCTION
 template<typename B, typename D, typename ...Arg>
 inline std::shared_ptr<B> make_shared(Arg && ... arg) {
-    return std::shared_ptr<B>(static_cast<B*>(new D(std::forward<Arg>(arg)...)));
+    return std::static_pointer_cast<B>(std::make_shared<D>(std::forward<Arg>(arg)...));
 }
 #else
 template<typename B, typename D, typename ...Arg>
 inline std::shared_ptr<B> make_shared(Arg && ... arg) {
-    return std::static_pointer_cast<B>(std::make_shared<D>(std::forward<Arg>(arg)...));
+    return std::shared_ptr<B>(static_cast<B*>(new D(std::forward<Arg>(arg)...)));
 }
 #endif
 
