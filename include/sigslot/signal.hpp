@@ -5,6 +5,7 @@
 #include <mutex>
 #include <atomic>
 #include <vector>
+#include <cassert>
 
 namespace sigslot {
 
@@ -110,8 +111,10 @@ inline std::shared_ptr<B> make_shared(Arg && ... arg) {
 class slot_state {
 public:
     constexpr slot_state() noexcept
-        : m_connected(true),
-          m_blocked(false) {}
+        : m_index(0)
+        , m_connected(true)
+        , m_blocked(false)
+    {}
 
     virtual ~slot_state() = default;
 
@@ -128,6 +131,7 @@ public:
     void unblock() noexcept { m_blocked.store(false); }
 
 protected:
+    std::size_t m_index;  // index into the array of slot pointers inside the signal
     virtual void do_disconnect() {}
 
 private:
@@ -274,10 +278,10 @@ private:
 
 namespace detail {
 
-// interface for cleanable objects
+// interface for cleanable objects, used to cleanup disconnected slots
 struct cleanable {
     virtual ~cleanable() = default;
-    virtual void clean() = 0;
+    virtual void clean(slot_state *) = 0;
 };
 
 template <typename...>
@@ -308,9 +312,13 @@ public:
             call_slot(std::forward<U>(u)...);
     }
 
+    std::size_t& index() {
+        return m_index;
+    }
+
 protected:
     void do_disconnect() final {
-        cleaner.clean();
+        cleaner.clean(this);
     }
 
 private:
@@ -743,25 +751,18 @@ protected:
     /**
      * remove disconnected slots
      */
-    void clean() {
+    void clean(detail::slot_state *state) {
         lock_type lock(m_mutex);
-        if (m_slots.empty())
-            return;
+        size_t idx = state->m_index;
 
-        auto it = std::begin(m_slots);
-        auto end = std::end(m_slots);
+        auto &ss = m_slots;
 
-        while (it != end) {
-            if ((*it)->connected()) {
-                ++it;
-            }
-            else {
-                --end;
-                std::iter_swap(it, end);
-            }
-        }
+        assert(!ss.empty());
+        assert(idx < ss.size());
 
-        m_slots.erase(end, std::end(m_slots));
+        std::swap(ss[idx], ss.back());
+        ss[idx]->m_index = idx;
+        ss.pop_back();
     }
 
 private:
