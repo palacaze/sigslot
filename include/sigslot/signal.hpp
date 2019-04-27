@@ -241,7 +241,8 @@ public:
 
     bool disconnect() noexcept {
         bool ret = m_connected.exchange(false);
-        do_disconnect();
+        if (ret)
+            do_disconnect();
         return ret;
     }
 
