@@ -555,8 +555,11 @@ public:
     }
 
     virtual void call_slot(Args ...args) override {
-        if (ptr.expired())
+        auto sp = ptr.lock();
+        if (!sp) {
             slot_state::disconnect();
+            return;
+        }
         if (slot_state::connected())
             func(args...);
     }
