@@ -88,6 +88,19 @@ class signal_base;
 
 namespace detail {
 
+// noop mutex for thread-unsafe use
+struct null_mutex {
+    null_mutex() = default;
+    null_mutex(const null_mutex &) = delete;
+    null_mutex operator=(const null_mutex &) = delete;
+    null_mutex(null_mutex &&) = delete;
+    null_mutex operator=(null_mutex &&) = delete;
+
+    inline bool try_lock() noexcept { return true; }
+    inline void lock() noexcept {}
+    inline void unlock() noexcept {}
+};
+
 /**
  * A simple copy on write container that will be used to improve slot lists
  * access efficiency in a multithreaded context.
@@ -114,7 +127,7 @@ public:
     {}
 
     template <typename U>
-    copy_on_write(U&& x, std::enable_if_t<!std::is_same<std::decay_t<U>, copy_on_write>{}>* = nullptr)
+    copy_on_write(U && x, std::enable_if_t<!std::is_same<std::decay_t<U>, copy_on_write>{}>* = nullptr)
         : m_data(new payload(std::forward<U>(x)))
     {}
 
@@ -155,19 +168,42 @@ public:
         return m_data->value;
     }
 
-    bool unique() const noexcept {
-        return m_data->count == 1;
-    }
-
     friend inline void swap(copy_on_write &x, copy_on_write &y) noexcept {
         using std::swap;
         swap(x.m_data, y.m_data);
     }
 
 private:
+    bool unique() const noexcept {
+        return m_data->count == 1;
+    }
+
+private:
     payload *m_data;
 };
 
+/**
+ * Specializations for thread-safe code path
+ */
+template <typename T>
+const T& cow_read(T &v) {
+    return v;
+}
+
+template <typename T>
+const T& cow_read(copy_on_write<T> &v) {
+    return v.read();
+}
+
+template <typename T>
+T& cow_write(T &v) {
+    return v;
+}
+
+template <typename T>
+T& cow_write(copy_on_write<T> &v) {
+    return v.write();
+}
 
 /**
  * std::make_shared instantiates a lot a templates, and makes both compilation time
@@ -563,20 +599,6 @@ private:
     std::decay_t<WeakPtr> ptr;
 };
 
-
-// noop mutex for thread-unsafe use
-struct null_mutex {
-    null_mutex() = default;
-    null_mutex(const null_mutex &) = delete;
-    null_mutex operator=(const null_mutex &) = delete;
-    null_mutex(null_mutex &&) = delete;
-    null_mutex operator=(null_mutex &&) = delete;
-
-    bool try_lock() { return true; }
-    void lock() {}
-    void unlock() {}
-};
-
 } // namespace detail
 
 
@@ -596,10 +618,24 @@ struct null_mutex {
  */
 template <typename Lockable, typename... T>
 class signal_base : public detail::cleanable {
+    template <typename L>
+    using is_thread_safe = std::integral_constant<bool, not std::is_same<L, detail::null_mutex>{}>;
+
+    template <typename U, typename L>
+    using cow_type = std::conditional_t<is_thread_safe<L>{}, detail::copy_on_write<U>, U>;
+
+    template <typename U, typename L>
+    using cow_copy_type = std::conditional_t<is_thread_safe<L>{}, detail::copy_on_write<U>, const U&>;
+
     using lock_type = std::unique_lock<Lockable>;
     using slot_base = detail::slot_base<T...>;
     using slot_ptr = detail::slot_ptr<T...>;
-    using cow_slot_list = detail::copy_on_write<std::vector<slot_ptr>>;
+    using list_type = std::vector<slot_ptr>;
+
+    cow_copy_type<list_type, Lockable> slots_copy() {
+        lock_type lock(m_mutex);
+        return m_slots;
+    }
 
 public:
     using arg_list = trait::typelist<T...>;
@@ -646,15 +682,10 @@ public:
         if (m_block)
             return;
 
-        cow_slot_list copy;
-
         // copy slots to execute them out of the lock
-        {
-            lock_type lock(m_mutex);
-            copy = m_slots;
-        }
+        cow_copy_type<list_type, Lockable> copy = slots_copy();
 
-        for (const auto &s : copy.read())
+        for (const auto &s : detail::cow_read(copy))
             s->operator()(a...);
     }
 
@@ -840,34 +871,35 @@ protected:
      */
     void clean(detail::slot_state *state) {
         lock_type lock(m_mutex);
-        size_t idx = state->m_index;
+        size_t idx = state->m_index;  // must take idx from inside the lock
 
-        auto &ss = m_slots.write();
+        auto &ss = detail::cow_write(m_slots);
 
         assert(!ss.empty());
         assert(idx < ss.size());
+        assert(ss[idx].get() == state);
 
         std::swap(ss[idx], ss.back());
-        ss[idx]->m_index = idx;
+        ss[idx]->m_index = idx;  // update idx to new position
         ss.pop_back();
     }
 
 private:
     void add_slot(slot_ptr &&s) {
         lock_type lock(m_mutex);
-        auto &ss = m_slots.write();
+        auto &ss = detail::cow_write(m_slots);
         s->m_index = ss.size();
         ss.push_back(std::move(s));
     }
 
     // to be called under lock
     void clear() {
-        m_slots.write().clear();
+        detail::cow_write(m_slots).clear();
     }
 
 private:
     Lockable m_mutex;
-    cow_slot_list m_slots;
+    cow_type<list_type, Lockable> m_slots;
     std::atomic<bool> m_block;
 };
 
