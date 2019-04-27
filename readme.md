@@ -18,15 +18,15 @@ No compilation or installation is required, just include `sigslot/signal.hpp` an
 
 A CMake build file is supplied for installation purpose and generating a CMake import module. It is also required for examples and tests, which optionally depend on Qt5 and Boost for adapters unit tests.
 
-A configuration option `SIGSLOT_DISABLE_CODE_SIZE_REDUCTION` is available at configuration time.
-When activated, it disables any attempt at reducing code bloat by avoiding heavy template instantiations resulting from calls to `std::make_shared`.
-This option is off by default, but can be activated for those who with to favor code efficiency at the expanse of compilation times.
+A configuration option `SIGSLOT_REDUCE_COMPILE_TIME` is available at configuration time.
+When activated, it attempts to reduce code bloat by avoiding heavy template instantiations resulting from calls to `std::make_shared`.
+This option is off by default, but can be activated for those who with to favor code size and compilation time at the expanse of slightly less efficient code.
 
 Installation may be done using the following instructions from the root directory:
 
 ```sh
 mkdir build && cd build
-cmake .. -DSIGSLOT_DISABLE_CODE_SIZE_REDUCTION=ON -DCMAKE_INSTALL_PREFIX=~/local
+cmake .. -DSIGSLOT_REDUCE_COMPILE_TIME=ON -DCMAKE_INSTALL_PREFIX=~/local
 cmake --build . --target install
 
 # If you want to compile examples:

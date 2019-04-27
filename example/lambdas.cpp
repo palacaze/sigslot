@@ -2,9 +2,9 @@
 #include <cstdio>
 
 /*
- * This example is meant to test compilation time as well as object size
- * when a lot of unique callables get connected to a signal.
- * This example motivated the introduction of a REDUCE_CODE_SIZE cmake option.
+ * This example is meant to test compilation time as well as object size when a
+ * lot of unique callables get connected to a signal.
+ * This example motivated the introduction of a SOCUTE_REDUCE_COMPILE_TIME cmake option.
  */
 
 #define LAMBDA4() sig.connect([](int) { puts("lambda\n"); });
