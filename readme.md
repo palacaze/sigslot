@@ -6,9 +6,9 @@ Sigslot is a header-only, thread safe implementation of signal-slots for C++.
 
 The main goal was to replace Boost.Signals2.
 
-Apart from the usual features, it offers thread safety, (extensible through ADL) object lifetime tracking for automatic slot disconnection, Boost.Signals2 style RAII connection management, reasonable performance and a simple and straightforward implementation.
+Apart from the usual features, it offers thread safety, object lifetime tracking for automatic slot disconnection (extensible through ADL), Boost.Signals2 style RAII connection management, reasonable performance and a simple and straightforward implementation.
 
-Sigslot is unit-tested, should be reliable and stable enough to replace Boost Signals2 (it works for me). I have done some simple benchmarking (fork of the [Signal-Slot Benchmarks](https://github.com/palacaze/signal-slot-benchmarks) project) and it seems to be doing fine performance-wise, though I can't vouch for these benchmarks' relevance.
+Sigslot is unit-tested, should be reliable and stable enough to replace Boost Signals2. The tests run cleanly under both address and thread sanitizers.
 
 Many implementations allow signal return types, Sigslot does not because I have no use for them. Although it would be a simple enough feature to add, it would most certainly double the source code as per the need of void return type specializations everywhere. If I can be convinced of otherwise I may change my mind later on.
 
@@ -376,6 +376,8 @@ int main() {
 ```
 
 ### Thread safety
+
+Thread safety is unit-tested. In particular, cross-signal emission and recursive emission run fine in a multiple threads scenario.
 
 `sigslot::signal` is a typedef to the more general `sigslot::signal_base` template class, whose first template argument must be a Lockable type. This type will dictate the locking policy of the class.
 
