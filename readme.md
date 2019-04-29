@@ -20,7 +20,7 @@ A CMake build file is supplied for installation purpose and generating a CMake i
 
 A configuration option `SIGSLOT_REDUCE_COMPILE_TIME` is available at configuration time.
 When activated, it attempts to reduce code bloat by avoiding heavy template instantiations resulting from calls to `std::make_shared`.
-This option is off by default, but can be activated for those who with to favor code size and compilation time at the expanse of slightly less efficient code.
+This option is off by default, but can be activated for those who wish to favor code size and compilation time at the expanse of slightly less efficient code.
 
 Installation may be done using the following instructions from the root directory:
 
