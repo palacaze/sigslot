@@ -127,7 +127,7 @@ public:
     {}
 
     template <typename U>
-    copy_on_write(U && x, std::enable_if_t<!std::is_same<std::decay_t<U>, copy_on_write>{}>* = nullptr)
+    copy_on_write(U && x, std::enable_if_t<!std::is_same<std::decay_t<U>, copy_on_write>::value>* = nullptr)
         : m_data(new payload(std::forward<U>(x)))
     {}
 
@@ -623,7 +623,7 @@ private:
 template <typename Lockable, typename... T>
 class signal_base : public detail::cleanable {
     template <typename L>
-    using is_thread_safe = std::integral_constant<bool, not std::is_same<L, detail::null_mutex>{}>;
+    using is_thread_safe = std::integral_constant<bool, !std::is_same<L, detail::null_mutex>::value>;
 
     template <typename U, typename L>
     using cow_type = std::conditional_t<is_thread_safe<L>{}, detail::copy_on_write<U>, U>;
