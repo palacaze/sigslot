@@ -32,7 +32,7 @@ include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
 configure_package_config_file(
-    ${CMAKE_SOURCE_DIR}/cmake/PalSigslotConfig.cmake.in
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/PalSigslotConfig.cmake.in
     ${CMAKE_CURRENT_BINARY_DIR}/PalSigslotConfig.cmake
     INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/PalSigslot"
 )
