@@ -868,6 +868,15 @@ public:
     bool blocked() const noexcept {
         return m_block.load();
     }
+    
+    /**
+     * Get number of connected slots
+     * Safety: thread safe
+     */
+    size_t slot_count() noexcept{
+        const auto& container = detail::cow_read<list_type>(m_slots);
+        return container.size();
+    }
 
 protected:
     /**
