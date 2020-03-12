@@ -869,6 +869,15 @@ public:
         return m_block.load();
     }
 
+    /**
+     * Get number of connected slots
+     * Safety: thread safe
+     */
+    size_t slot_count() noexcept {
+        auto copy = slots_copy();
+        return detail::cow_read(copy).size();
+    }
+
 protected:
     /**
      * remove disconnected slots
