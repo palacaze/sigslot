@@ -40,8 +40,7 @@ struct o6 { void operator()(int i) const noexcept { sum += i; } };
 struct o7 { void operator()(int i) volatile noexcept { sum += i; } };
 struct o8 { void operator()(int i) const volatile noexcept { sum += i; } };
 
-void test_slot_count()
-{
+void test_slot_count() {
     signal<int> sig;
     s p;
 
@@ -57,7 +56,7 @@ void test_slot_count()
     assert(sig.slot_count() == 5);
     sig.connect(&s::f6, &p);
     assert(sig.slot_count() == 6);
-    
+
     {
         scoped_connection conn = sig.connect(&s::f7, &p);
         assert(sig.slot_count() == 7);
@@ -531,7 +530,7 @@ int main() {
     test_scoped_connection_moving();
     test_signal_moving();
     test_loop();
-	 test_slot_count();
+    test_slot_count();
     return 0;
 }
 
