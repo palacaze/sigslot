@@ -40,6 +40,39 @@ struct o6 { void operator()(int i) const noexcept { sum += i; } };
 struct o7 { void operator()(int i) volatile noexcept { sum += i; } };
 struct o8 { void operator()(int i) const volatile noexcept { sum += i; } };
 
+void test_slot_count()
+{
+    signal<int> sig;
+    s p;
+
+    sig.connect(&s::f1, &p);
+    assert(sig.slot_count() == 1);
+    sig.connect(&s::f2, &p);
+    assert(sig.slot_count() == 2);
+    sig.connect(&s::f3, &p);
+    assert(sig.slot_count() == 3);
+    sig.connect(&s::f4, &p);
+    assert(sig.slot_count() == 4);
+    sig.connect(&s::f5, &p);
+    assert(sig.slot_count() == 5);
+    sig.connect(&s::f6, &p);
+    assert(sig.slot_count() == 6);
+    
+    {
+        scoped_connection conn = sig.connect(&s::f7, &p);
+        assert(sig.slot_count() == 7);
+    }
+    assert(sig.slot_count() == 6);
+
+    auto conn = sig.connect(&s::f8, &p);
+    assert(sig.slot_count() == 7);
+    conn.disconnect();
+    assert(sig.slot_count() == 6);
+
+    sig.disconnect_all();
+    assert(sig.slot_count() == 0);
+}
+
 void test_free_connection() {
     sum = 0;
     signal<int> sig;
@@ -498,6 +531,7 @@ int main() {
     test_scoped_connection_moving();
     test_signal_moving();
     test_loop();
+	 test_slot_count();
     return 0;
 }
 

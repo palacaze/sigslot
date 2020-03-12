@@ -873,9 +873,9 @@ public:
      * Get number of connected slots
      * Safety: thread safe
      */
-    size_t slot_count() noexcept{
-        const auto& container = detail::cow_read<list_type>(m_slots);
-        return container.size();
+    size_t slot_count() noexcept {
+        auto copy = slots_copy();
+        return detail::cow_read(copy).size();
     }
 
 protected:
