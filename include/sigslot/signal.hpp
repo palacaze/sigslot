@@ -1,11 +1,11 @@
 #pragma once
-#include <type_traits>
-#include <memory>
-#include <utility>
-#include <mutex>
 #include <atomic>
-#include <vector>
 #include <cassert>
+#include <memory>
+#include <mutex>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
 namespace sigslot {
 
@@ -20,12 +20,12 @@ template <typename...> struct typelist {};
  * ADL to convert that type and make it usable
  */
 
-template<typename T>
+template <typename T>
 std::weak_ptr<T> to_weak(std::weak_ptr<T> w) {
     return w;
 }
 
-template<typename T>
+template <typename T>
 std::weak_ptr<T> to_weak(std::shared_ptr<T> s) {
     return s;
 }
@@ -33,11 +33,11 @@ std::weak_ptr<T> to_weak(std::shared_ptr<T> s) {
 // tools
 namespace detail {
 
-template <class...>
+template <typename...>
 struct voider { using type = void; };
 
 // void_t from c++17
-template <class...T>
+template <typename...T>
 using void_t = typename detail::voider<T...>::type;
 
 
@@ -91,6 +91,7 @@ namespace detail {
 // noop mutex for thread-unsafe use
 struct null_mutex {
     null_mutex() = default;
+    ~null_mutex() = default;
     null_mutex(const null_mutex &) = delete;
     null_mutex operator=(const null_mutex &) = delete;
     null_mutex(null_mutex &&) = delete;
@@ -127,7 +128,8 @@ public:
     {}
 
     template <typename U>
-    copy_on_write(U && x, std::enable_if_t<!std::is_same<std::decay_t<U>, copy_on_write>::value>* = nullptr)
+    explicit copy_on_write(U && x, std::enable_if_t<!std::is_same<std::decay_t<U>,
+                           copy_on_write>::value>* = nullptr)
         : m_data(new payload(std::forward<U>(x)))
     {}
 
@@ -144,12 +146,16 @@ public:
     }
 
     ~copy_on_write() {
-        if (m_data && (--m_data->count == 0))
+        if (m_data && (--m_data->count == 0)) {
             delete m_data;
+        }
     }
 
     copy_on_write& operator=(const copy_on_write &x) noexcept {
-        return *this = copy_on_write(x);
+        if (&x != this) {
+            *this = copy_on_write(x);
+        }
+        return *this;
     }
 
     copy_on_write& operator=(copy_on_write && x) noexcept  {
@@ -159,8 +165,9 @@ public:
     }
 
     element_type& write() {
-        if (!unique())
+        if (!unique()) {
             *this = copy_on_write(read());
+        }
         return m_data->value;
     }
 
@@ -213,12 +220,12 @@ T& cow_write(copy_on_write<T> &v) {
  * - Allocates a separate control block, and will thus make the code slower.
  */
 #ifdef SIGSLOT_REDUCE_COMPILE_TIME
-template<typename B, typename D, typename ...Arg>
+template <typename B, typename D, typename ...Arg>
 inline std::shared_ptr<B> make_shared(Arg && ... arg) {
     return std::shared_ptr<B>(static_cast<B*>(new D(std::forward<Arg>(arg)...)));
 }
 #else
-template<typename B, typename D, typename ...Arg>
+template <typename B, typename D, typename ...Arg>
 inline std::shared_ptr<B> make_shared(Arg && ... arg) {
     return std::static_pointer_cast<B>(std::make_shared<D>(std::forward<Arg>(arg)...));
 }
@@ -241,8 +248,9 @@ public:
 
     bool disconnect() noexcept {
         bool ret = m_connected.exchange(false);
-        if (ret)
+        if (ret) {
             do_disconnect();
+        }
         return ret;
     }
 
@@ -251,13 +259,17 @@ public:
     void unblock() noexcept { m_blocked.store(false); }
 
 protected:
-    std::size_t m_index;  // index into the array of slot pointers inside the signal
     virtual void do_disconnect() {}
+    std::size_t& index() {
+        return m_index;
+    }
+
 
 private:
     template <typename, typename...>
     friend class ::sigslot::signal_base;
 
+    std::size_t m_index;  // index into the array of slot pointers inside the signal
     std::atomic<bool> m_connected;
     std::atomic<bool> m_blocked;
 };
@@ -287,16 +299,18 @@ public:
 
 private:
     friend class connection;
-    connection_blocker(std::weak_ptr<detail::slot_state> s) noexcept
+    explicit connection_blocker(std::weak_ptr<detail::slot_state> s) noexcept
         : m_state{std::move(s)}
     {
-        if (auto d = m_state.lock())
+        if (auto d = m_state.lock()) {
             d->block();
+        }
     }
 
     void release() noexcept {
-        if (auto d = m_state.lock())
+        if (auto d = m_state.lock()) {
             d->unblock();
+        }
     }
 
 private:
@@ -341,13 +355,15 @@ public:
     }
 
     void block() noexcept {
-        if (auto d = m_state.lock())
+        if (auto d = m_state.lock()) {
             d->block();
+        }
     }
 
     void unblock() noexcept {
-        if (auto d = m_state.lock())
+        if (auto d = m_state.lock()) {
             d->unblock();
+        }
     }
 
     connection_blocker blocker() const noexcept {
@@ -356,7 +372,7 @@ public:
 
 protected:
     template <typename, typename...> friend class signal_base;
-    connection(std::weak_ptr<detail::slot_state> s) noexcept
+    explicit connection(std::weak_ptr<detail::slot_state> s) noexcept
         : m_state{std::move(s)}
     {}
 
@@ -371,12 +387,12 @@ protected:
 class scoped_connection : public connection {
 public:
     scoped_connection() = default;
-    ~scoped_connection() {
+    ~scoped_connection() override {
         disconnect();
     }
 
-    scoped_connection(const connection &c) noexcept : connection(c) {}
-    scoped_connection(connection &&c) noexcept : connection(std::move(c)) {}
+    /*implicit*/ scoped_connection(const connection &c) noexcept : connection(c) {}
+    /*implicit*/ scoped_connection(connection &&c) noexcept : connection(std::move(c)) {}
 
     scoped_connection(const scoped_connection &) noexcept = delete;
     scoped_connection & operator=(const scoped_connection &) noexcept = delete;
@@ -393,7 +409,7 @@ public:
 
 private:
     template <typename, typename...> friend class signal_base;
-    scoped_connection(std::weak_ptr<detail::slot_state> s) noexcept
+    explicit scoped_connection(std::weak_ptr<detail::slot_state> s) noexcept
         : connection{std::move(s)}
     {}
 };
@@ -422,8 +438,8 @@ class slot_base : public slot_state {
 public:
     using base_types = trait::typelist<Args...>;
 
-    slot_base(cleanable &c) : cleaner(c) {}
-    virtual ~slot_base() = default;
+    explicit slot_base(cleanable &c) : cleaner(c) {}
+    ~slot_base() override = default;
 
     // method effectively responsible for calling the "slot" function with
     // supplied arguments whenever emission happens.
@@ -431,12 +447,9 @@ public:
 
     template <typename... U>
     void operator()(U && ...u) {
-        if (slot_state::connected() && !slot_state::blocked())
+        if (slot_state::connected() && !slot_state::blocked()) {
             call_slot(std::forward<U>(u)...);
-    }
-
-    std::size_t& index() {
-        return m_index;
+        }
     }
 
 protected:
@@ -460,7 +473,7 @@ public:
         : slot_base<Args...>(c)
         , func{std::forward<F>(f)} {}
 
-    virtual void call_slot(Args ...args) override {
+    void call_slot(Args ...args) override {
         func(args...);
     }
 
@@ -479,7 +492,7 @@ public:
         : slot_base<Args...>(c)
         , func{std::forward<F>(f)} {}
 
-    virtual void call_slot(Args ...args) override {
+    void call_slot(Args ...args) override {
         func(conn, args...);
     }
 
@@ -503,7 +516,7 @@ public:
         , pmf{std::forward<F>(f)}
         , ptr{std::forward<P>(p)} {}
 
-    virtual void call_slot(Args ...args) override {
+    void call_slot(Args ...args) override {
         ((*ptr).*pmf)(args...);
     }
 
@@ -524,7 +537,7 @@ public:
         , pmf{std::forward<F>(f)}
         , ptr{std::forward<P>(p)} {}
 
-    virtual void call_slot(Args ...args) override {
+    void call_slot(Args ...args) override {
         ((*ptr).*pmf)(conn, args...);
     }
 
@@ -554,14 +567,15 @@ public:
         return !ptr.expired() && slot_state::connected();
     }
 
-    virtual void call_slot(Args ...args) override {
+    void call_slot(Args ...args) override {
         auto sp = ptr.lock();
         if (!sp) {
             slot_state::disconnect();
             return;
         }
-        if (slot_state::connected())
+        if (slot_state::connected()) {
             func(args...);
+        }
     }
 
 private:
@@ -588,14 +602,15 @@ public:
         return !ptr.expired() && slot_state::connected();
     }
 
-    virtual void call_slot(Args ...args) override {
+    void call_slot(Args ...args) override {
         auto sp = ptr.lock();
         if (!sp) {
             slot_state::disconnect();
             return;
         }
-        if (slot_state::connected())
+        if (slot_state::connected()) {
             ((*sp).*pmf)(args...);
+        }
     }
 
 private:
@@ -646,21 +661,21 @@ public:
     using ext_arg_list = trait::typelist<connection&, T...>;
 
     signal_base() noexcept : m_block(false) {}
-    ~signal_base() {
+    ~signal_base() override {
         disconnect_all();
     }
 
     signal_base(const signal_base&) = delete;
     signal_base & operator=(const signal_base&) = delete;
 
-    signal_base(signal_base && o)
+    signal_base(signal_base && o) /* not noexcept */
         : m_block{o.m_block.load()}
     {
         lock_type lock(o.m_mutex);
         std::swap(m_slots, o.m_slots);
     }
 
-    signal_base & operator=(signal_base && o) {
+    signal_base & operator=(signal_base && o) /* not noexcept */ {
         lock_type lock1(m_mutex, std::defer_lock);
         lock_type lock2(o.m_mutex, std::defer_lock);
         std::lock(lock1, lock2);
@@ -683,14 +698,16 @@ public:
      * @param a... arguments to emit
      */
     void operator()(T ...a) {
-        if (m_block)
+        if (m_block) {
             return;
+        }
 
         // copy slots to execute them out of the lock
         cow_copy_type<list_type, Lockable> copy = slots_copy();
 
-        for (const auto &s : detail::cow_read(copy))
+        for (const auto &s : detail::cow_read(copy)) {
             s->operator()(a...);
+        }
     }
 
     /**
@@ -882,9 +899,9 @@ protected:
     /**
      * remove disconnected slots
      */
-    void clean(detail::slot_state *state) {
+    void clean(detail::slot_state *state) override {
         lock_type lock(m_mutex);
-        size_t idx = state->m_index;  // must take idx from inside the lock
+        size_t idx = state->index();  // must take idx from inside the lock
 
         auto &ss = detail::cow_write(m_slots);
 
@@ -893,7 +910,7 @@ protected:
         assert(ss[idx].get() == state);
 
         std::swap(ss[idx], ss.back());
-        ss[idx]->m_index = idx;  // update idx to new position
+        ss[idx]->index() = idx;  // update idx to new position
         ss.pop_back();
     }
 
@@ -901,7 +918,7 @@ private:
     void add_slot(slot_ptr &&s) {
         lock_type lock(m_mutex);
         auto &ss = detail::cow_write(m_slots);
-        s->m_index = ss.size();
+        s->index() = ss.size();
         ss.push_back(std::move(s));
     }
 
@@ -935,4 +952,3 @@ template <typename... T>
 using signal = signal_base<std::mutex, T...>;
 
 } // namespace sigslot
-
