@@ -40,6 +40,11 @@ struct voider { using type = void; };
 template <typename...T>
 using void_t = typename detail::voider<T...>::type;
 
+template <typename, typename = void>
+struct has_call_operator : std::false_type {};
+
+template <typename F>
+struct has_call_operator<F, void_t<decltype(&F::operator())>> : std::true_type {};
 
 template <typename, typename, typename = void, typename = void>
 struct is_callable : std::false_type {};
@@ -87,6 +92,102 @@ template <typename, typename...>
 class signal_base;
 
 namespace detail {
+
+/*
+ * The following callable_pointer and object_pointer series of templates are
+ * used to circumvent the type-erasing that takes place in the slot_base
+ * implementations. They do so by obtaining the address of the callables and
+ * objects and casting them to a void type
+ *
+ * NOTE: I am not convinced there is no UB happening for pointers to member
+ * functions, this is pretty funky.
+ */
+
+using data_ptr = const void*;
+using call_pptr = data_ptr*;
+
+template <typename T, typename = void>
+struct callable_pointer {
+    static void get_ptr(const T &, call_pptr p) {
+        *p = nullptr;
+    }
+};
+
+template <typename T>
+struct callable_pointer<T, std::enable_if_t<std::is_function<T>{}>> {
+    static void get_ptr(const T &t, call_pptr p) {
+        *p = reinterpret_cast<data_ptr>(t);
+    }
+};
+
+template <typename T>
+struct callable_pointer<T*, std::enable_if_t<std::is_function<T>{}>> {
+    static void get_ptr(const T *t, call_pptr p) {
+        *p = reinterpret_cast<data_ptr>(t);
+    }
+};
+
+template <typename T>
+struct callable_pointer<T, std::enable_if_t<std::is_member_function_pointer<T>{}>> {
+    static void get_ptr(const T &t, call_pptr p) {
+        *p = *const_cast<call_pptr>(reinterpret_cast<const void*const*>(&t));
+    }
+};
+
+// for function objects, the assumption is that we are looking for the call operator
+template <typename T>
+struct callable_pointer<T, std::enable_if_t<trait::detail::has_call_operator<T>{}>> {
+    static void get_ptr(const T &/*t*/, call_pptr p) {
+        using U = decltype(&T::operator());
+        callable_pointer<U>::get_ptr(&T::operator(), p);
+    }
+};
+
+template <typename T>
+void get_callable_ptr(const T &t, call_pptr p) {
+    callable_pointer<T>::get_ptr(t, p);
+}
+
+template <typename T>
+data_ptr get_object_ptr(const T &t);
+
+template <typename T, typename = void>
+struct object_pointer {
+    static data_ptr get_ptr(const T&) {
+        return nullptr;
+    }
+};
+
+template <typename T>
+struct object_pointer<T*, std::enable_if_t<std::is_pointer<T*>{}>> {
+    static data_ptr get_ptr(const T *t) {
+        return reinterpret_cast<data_ptr>(t);
+    }
+};
+
+template <typename T>
+struct object_pointer<T, std::enable_if_t<trait::detail::is_weak_ptr<T>{}>> {
+    static data_ptr get_ptr(const T &t) {
+        auto p = t.lock();
+        return get_object_ptr(p);
+    }
+};
+
+template <typename T>
+struct object_pointer<T, std::enable_if_t<!std::is_pointer<T>{} &&
+                                          !trait::detail::is_weak_ptr<T>{} &&
+                                          trait::is_weak_ptr_compatible_v<T>>>
+{
+    static data_ptr get_ptr(const T &t) {
+        return t ? reinterpret_cast<data_ptr>(t.get()) : nullptr;
+    }
+};
+
+template <typename T>
+data_ptr get_object_ptr(const T &t) {
+    return object_pointer<T>::get_ptr(t);
+}
+
 
 // noop mutex for thread-unsafe use
 struct null_mutex {
@@ -452,7 +553,18 @@ public:
         }
     }
 
+    // retieve a pointer to the object embedded in the slot
+    virtual data_ptr get_object() const noexcept {
+        return nullptr;
+    }
+
+    // retieve a pointer to the callable embedded in the slot
+    virtual void get_callable(call_pptr p) const noexcept {
+        *p = nullptr;
+    }
+
 protected:
+
     void do_disconnect() final {
         cleaner.clean(this);
     }
@@ -473,8 +585,13 @@ public:
         : slot_base<Args...>(c)
         , func{std::forward<F>(f)} {}
 
+protected:
     void call_slot(Args ...args) override {
         func(args...);
+    }
+
+    void get_callable(call_pptr p) const noexcept override {
+        get_callable_ptr(func, p);
     }
 
 private:
@@ -494,6 +611,10 @@ public:
 
     void call_slot(Args ...args) override {
         func(conn, args...);
+    }
+
+    void get_callable(call_pptr p) const noexcept override {
+        get_callable_ptr(func, p);
     }
 
     connection conn;
@@ -520,6 +641,14 @@ public:
         ((*ptr).*pmf)(args...);
     }
 
+    void get_callable(call_pptr p) const noexcept override {
+        get_callable_ptr(pmf, p);
+    }
+
+    data_ptr get_object() const noexcept override {
+        return get_object_ptr(ptr);
+    }
+
 private:
     std::decay_t<Pmf> pmf;
     std::decay_t<Ptr> ptr;
@@ -539,6 +668,14 @@ public:
 
     void call_slot(Args ...args) override {
         ((*ptr).*pmf)(conn, args...);
+    }
+
+    void get_callable(call_pptr p) const noexcept override {
+        get_callable_ptr(pmf, p);
+    }
+
+    data_ptr get_object() const noexcept override {
+        return get_object_ptr(ptr);
     }
 
     connection conn;
@@ -578,6 +715,14 @@ public:
         }
     }
 
+    void get_callable(call_pptr p) const noexcept override {
+        get_callable_ptr(func, p);
+    }
+
+    data_ptr get_object() const noexcept override {
+        return get_object_ptr(ptr);
+    }
+
 private:
     std::decay_t<Func> func;
     std::decay_t<WeakPtr> ptr;
@@ -611,6 +756,14 @@ public:
         if (slot_state::connected()) {
             ((*sp).*pmf)(args...);
         }
+    }
+
+    void get_callable(call_pptr p) const noexcept override {
+        get_callable_ptr(pmf, p);
+    }
+
+    data_ptr get_object() const noexcept override {
+        return get_object_ptr(ptr);
     }
 
 private:
@@ -852,6 +1005,131 @@ public:
     template <typename... CallArgs>
     scoped_connection connect_scoped(CallArgs && ...args) {
         return connect(std::forward<CallArgs>(args)...);
+    }
+
+    /**
+     * Disconnect slots bound to a callable
+     *
+     * Effect: Disconnects all the slots bound to the callable in argument.
+     * Safety: Thread-safety depends on locking policy.
+     *
+     * The callable may be a function, a pointer to member functione a function
+     * object or a (reference to a) lambda.
+     *
+     * @param c a callable
+     * @return the number of disconnected slots
+     */
+    template <typename Callable>
+    std::enable_if_t<trait::is_callable_v<arg_list, Callable> ||
+                     trait::is_callable_v<ext_arg_list, Callable> ||
+                     std::is_member_function_pointer<Callable>{}, size_t>
+    disconnect(Callable c) {
+        detail ::data_ptr cp = nullptr;
+        detail::get_callable_ptr(c, &cp);
+
+        lock_type lock(m_mutex);
+        auto &ss = detail::cow_write(m_slots);
+
+        size_t count = 0;
+        size_t i = 0;
+
+        while (i < ss.size()) {
+            detail::data_ptr cp1 = nullptr;
+            ss[i]->get_callable(&cp1);
+
+            if (cp && cp1 && cp == cp1) {
+                std::swap(ss[i], ss.back());
+                ss[i]->index() = i;  // update idx to new position
+                ss.pop_back();
+                ++count;
+            } else {
+                ++i;
+            }
+        }
+
+        return count;
+    }
+
+    /**
+     * Disconnect slots bound to this object
+     *
+     * Effect: Disconnects all the slots bound to the object or tracked object
+     *         in argument.
+     * Safety: Thread-safety depends on locking policy.
+     *
+     * The object may be a pointer or trackable object.
+     *
+     * @param obj an object
+     * @return the number of disconnected slots
+     */
+    template <typename Obj>
+    std::enable_if_t<!trait::is_callable_v<arg_list, Obj> &&
+                     !trait::is_callable_v<ext_arg_list, Obj> &&
+                     !std::is_member_function_pointer<Obj>{}, size_t>
+    disconnect(const Obj &obj) {
+        auto op = detail::get_object_ptr(obj);
+
+        lock_type lock(m_mutex);
+        auto &ss = detail::cow_write(m_slots);
+
+        size_t count = 0;
+        size_t i = 0;
+
+        while (i < ss.size()) {
+            if (ss[i]->get_object() == op) {
+                std::swap(ss[i], ss.back());
+                ss[i]->index() = i;  // update idx to new position
+                ss.pop_back();
+                ++count;
+            } else {
+                ++i;
+            }
+        }
+
+        return count;
+    }
+
+    /**
+     * Disconnect slots bound both to a callable and object
+     *
+     * Effect: Disconnects all the slots bound to the callable and object in argument.
+     * Safety: Thread-safety depends on locking policy.
+     *
+     * For naked pointers, the Callable is expected to be a pointer over member
+     * function. If obj is trackable, any kind of Callable can be used.
+     *
+     * @param c a callable
+     * @param obj an object
+     * @return the number of disconnected slots
+     */
+    template <typename Callable, typename Obj>
+    size_t disconnect(Callable c, const Obj &obj) {
+        detail ::data_ptr cp = nullptr;
+        detail::get_callable_ptr(c, &cp);
+        auto op = detail::get_object_ptr(obj);
+
+        lock_type lock(m_mutex);
+        auto &ss = detail::cow_write(m_slots);
+
+        size_t count = 0;
+        size_t i = 0;
+
+        while (i < ss.size()) {
+            detail::data_ptr scp = nullptr;
+            ss[i]->get_callable(&scp);
+            auto sop = ss[i]->get_object();
+
+            if (sop == op && scp && cp && scp == cp) {
+                std::swap(ss[i], ss.back());
+                ss[i]->index() = i;  // update idx to new position
+                ss.pop_back();
+                ++count;
+            } else {
+                ++i;
+            }
+        }
+
+        return count;
     }
 
     /**

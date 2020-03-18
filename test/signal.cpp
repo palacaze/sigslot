@@ -7,7 +7,7 @@
 
 using namespace sigslot;
 
-int sum = 0;
+static int sum = 0;
 
 void f1(int i) { sum += i; }
 void f2(int i) noexcept { sum += 2*i; }
@@ -28,7 +28,7 @@ struct s {
 
 struct oo {
     void operator()(int i) { sum += i; }
-    void operator()(double i) { sum += std::round(4*i); }
+    void operator()(double i) { sum += int(std::round(4*i)); }
 };
 
 struct o1 { void operator()(int i) { sum += i; } };
@@ -298,6 +298,169 @@ void test_disconnection() {
     }
 }
 
+void test_disconnection_by_callable() {
+    // disconnect a function pointer
+    {
+        sum = 0;
+        signal<int> sig;
+
+        sig.connect(f1);
+        sig.connect(f2);
+        sig.connect(f2);
+        sig(1);
+        assert(sum == 5);
+        auto c = sig.disconnect(&f2);
+        assert(c == 2);
+        sig(1);
+        assert(sum == 6);
+    }
+
+    // disconnect a function
+    {
+        sum = 0;
+        signal<int> sig;
+
+        sig.connect(f1);
+        sig.connect(f2);
+        sig(1);
+        assert(sum == 3);
+        sig.disconnect(f1);
+        sig(1);
+        assert(sum == 5);
+    }
+
+    // disconnect by pmf
+    {
+        sum = 0;
+        signal<int> sig;
+        s p;
+
+        sig.connect(&s::f1, &p);
+        sig.connect(&s::f2, &p);
+        sig(1);
+        assert(sum == 2);
+        sig.disconnect(&s::f1);
+        sig(1);
+        assert(sum == 3);
+    }
+
+    // disconnect by function object
+    {
+        sum = 0;
+        signal<int> sig;
+
+        sig.connect(o1{});
+        sig.connect(o2{});
+        sig(1);
+        assert(sum == 2);
+        sig.disconnect(o1{});
+        sig(1);
+        assert(sum == 3);
+    }
+
+    // disconnect by lambda
+    {
+        sum = 0;
+        signal<int> sig;
+        auto l1 = [&](int i) { sum += i; };
+        auto l2 = [&](int i) { sum += 2*i; };
+        sig.connect(l1);
+        sig.connect(l2);
+        sig(1);
+        assert(sum == 3);
+        sig.disconnect(l1);
+        sig(1);
+        assert(sum == 5);
+    }
+}
+
+void test_disconnection_by_object() {
+    // disconnect by pointer
+    {
+        sum = 0;
+        signal<int> sig;
+        s p1, p2;
+
+        sig.connect(&s::f1, &p1);
+        sig.connect(&s::f2, &p2);
+        sig(1);
+        assert(sum == 2);
+        sig.disconnect(&p1);
+        sig(1);
+        assert(sum == 3);
+    }
+
+    // disconnect by shared pointer
+    {
+        sum = 0;
+        signal<int> sig;
+        auto p1 = std::make_shared<s>();
+        s p2;
+
+        sig.connect(&s::f1, p1);
+        sig.connect(&s::f2, &p2);
+        sig(1);
+        assert(sum == 2);
+        sig.disconnect(p1);
+        sig(1);
+        assert(sum == 3);
+    }
+}
+
+void test_disconnection_by_object_and_pmf() {
+    // disconnect by pointer
+    {
+        sum = 0;
+        signal<int> sig;
+        s p1, p2;
+
+        sig.connect(&s::f1, &p1);
+        sig.connect(&s::f1, &p2);
+        sig.connect(&s::f2, &p1);
+        sig.connect(&s::f2, &p2);
+        sig(1);
+        assert(sum == 4);
+        sig.disconnect(&s::f1, &p2);
+        sig(1);
+        assert(sum == 7);
+    }
+
+    // disconnect by shared pointer
+    {
+        sum = 0;
+        signal<int> sig;
+        auto p1 = std::make_shared<s>();
+        auto p2 = std::make_shared<s>();
+
+        sig.connect(&s::f1, p1);
+        sig.connect(&s::f1, p2);
+        sig.connect(&s::f2, p1);
+        sig.connect(&s::f2, p2);
+        sig(1);
+        assert(sum == 4);
+        sig.disconnect(&s::f1, p2);
+        sig(1);
+        assert(sum == 7);
+    }
+
+    // disconnect by tracker
+    {
+        sum = 0;
+        signal<int> sig;
+
+        auto t = std::make_shared<bool>();
+        sig.connect(f1);
+        sig.connect(f2);
+        sig.connect(f1, t);
+        sig.connect(f2, t);
+        sig(1);
+        assert(sum == 6);
+        sig.disconnect(f2, t);
+        sig(1);
+        assert(sum == 10);
+    }
+}
+
 void test_scoped_connection() {
     sum = 0;
     signal<int> sig;
@@ -521,6 +684,9 @@ int main() {
     test_compatible_args();
     test_mutation();
     test_disconnection();
+    test_disconnection_by_callable();
+    test_disconnection_by_object();
+    test_disconnection_by_object_and_pmf();
     test_scoped_connection();
     test_connection_blocker();
     test_connection_blocking();
