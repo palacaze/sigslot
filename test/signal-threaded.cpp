@@ -7,7 +7,7 @@
 
 using namespace sigslot;
 
-std::atomic<long int> sum{0};
+std::atomic<std::int64_t> sum{0};
 
 static void f(int i) { sum += i; }
 
@@ -88,7 +88,7 @@ static void test_threaded_crossed() {
     t1.join();
     t2.join();
 
-    assert(sum == 1000000000000l);
+    assert(sum == std::int64_t(1000000000000ll));
 }
 
 int main() {
