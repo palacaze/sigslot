@@ -86,6 +86,21 @@ constexpr bool is_weak_ptr_compatible_v = detail::is_weak_ptr_compatible<std::de
 template <typename L, typename... T>
 constexpr bool is_callable_v = detail::is_callable<T..., L>::value;
 
+template <typename T>
+constexpr bool is_weak_ptr_v = detail::is_weak_ptr<T>::value;
+
+template <typename T>
+constexpr bool has_call_operator_v = detail::has_call_operator<T>::value;
+
+template <typename T>
+constexpr bool is_pointer_v = std::is_pointer<T>::value;
+
+template <typename T>
+constexpr bool is_func_v = std::is_function<T>::value;
+
+template <typename T>
+constexpr bool is_pmf_v = std::is_member_function_pointer<T>::value;
+
 } // namespace trait
 
 template <typename, typename...>
@@ -114,21 +129,21 @@ struct callable_pointer {
 };
 
 template <typename T>
-struct callable_pointer<T, std::enable_if_t<std::is_function<T>{}>> {
+struct callable_pointer<T, std::enable_if_t<trait::is_func_v<T>>> {
     static void get_ptr(const T &t, call_pptr p) {
         *p = reinterpret_cast<data_ptr>(t);
     }
 };
 
 template <typename T>
-struct callable_pointer<T*, std::enable_if_t<std::is_function<T>{}>> {
+struct callable_pointer<T*, std::enable_if_t<trait::is_func_v<T>>> {
     static void get_ptr(const T *t, call_pptr p) {
         *p = reinterpret_cast<data_ptr>(t);
     }
 };
 
 template <typename T>
-struct callable_pointer<T, std::enable_if_t<std::is_member_function_pointer<T>{}>> {
+struct callable_pointer<T, std::enable_if_t<trait::is_pmf_v<T>>> {
     static void get_ptr(const T &t, call_pptr p) {
         *p = *const_cast<call_pptr>(reinterpret_cast<const void*const*>(&t));
     }
@@ -136,7 +151,7 @@ struct callable_pointer<T, std::enable_if_t<std::is_member_function_pointer<T>{}
 
 // for function objects, the assumption is that we are looking for the call operator
 template <typename T>
-struct callable_pointer<T, std::enable_if_t<trait::detail::has_call_operator<T>{}>> {
+struct callable_pointer<T, std::enable_if_t<trait::has_call_operator_v<T>>> {
     static void get_ptr(const T &/*t*/, call_pptr p) {
         using U = decltype(&T::operator());
         callable_pointer<U>::get_ptr(&T::operator(), p);
@@ -159,14 +174,14 @@ struct object_pointer {
 };
 
 template <typename T>
-struct object_pointer<T*, std::enable_if_t<std::is_pointer<T*>{}>> {
+struct object_pointer<T*, std::enable_if_t<trait::is_pointer_v<T*>>> {
     static data_ptr get_ptr(const T *t) {
         return reinterpret_cast<data_ptr>(t);
     }
 };
 
 template <typename T>
-struct object_pointer<T, std::enable_if_t<trait::detail::is_weak_ptr<T>{}>> {
+struct object_pointer<T, std::enable_if_t<trait::is_weak_ptr_v<T>>> {
     static data_ptr get_ptr(const T &t) {
         auto p = t.lock();
         return get_object_ptr(p);
@@ -174,8 +189,8 @@ struct object_pointer<T, std::enable_if_t<trait::detail::is_weak_ptr<T>{}>> {
 };
 
 template <typename T>
-struct object_pointer<T, std::enable_if_t<!std::is_pointer<T>{} &&
-                                          !trait::detail::is_weak_ptr<T>{} &&
+struct object_pointer<T, std::enable_if_t<!trait::is_pointer_v<T> &&
+                                          !trait::is_weak_ptr_v<T> &&
                                           trait::is_weak_ptr_compatible_v<T>>>
 {
     static data_ptr get_ptr(const T &t) {
@@ -794,10 +809,12 @@ class signal_base : public detail::cleanable {
     using is_thread_safe = std::integral_constant<bool, !std::is_same<L, detail::null_mutex>::value>;
 
     template <typename U, typename L>
-    using cow_type = std::conditional_t<is_thread_safe<L>{}, detail::copy_on_write<U>, U>;
+    using cow_type = std::conditional_t<is_thread_safe<L>::value,
+                                        detail::copy_on_write<U>, U>;
 
     template <typename U, typename L>
-    using cow_copy_type = std::conditional_t<is_thread_safe<L>{}, detail::copy_on_write<U>, const U&>;
+    using cow_copy_type = std::conditional_t<is_thread_safe<L>::value,
+                                             detail::copy_on_write<U>, const U&>;
 
     using lock_type = std::unique_lock<Lockable>;
     using slot_base = detail::slot_base<T...>;
@@ -1022,7 +1039,7 @@ public:
     template <typename Callable>
     std::enable_if_t<trait::is_callable_v<arg_list, Callable> ||
                      trait::is_callable_v<ext_arg_list, Callable> ||
-                     std::is_member_function_pointer<Callable>{}, size_t>
+                     trait::is_pmf_v<Callable>, size_t>
     disconnect(Callable c) {
         detail ::data_ptr cp = nullptr;
         detail::get_callable_ptr(c, &cp);
@@ -1065,7 +1082,7 @@ public:
     template <typename Obj>
     std::enable_if_t<!trait::is_callable_v<arg_list, Obj> &&
                      !trait::is_callable_v<ext_arg_list, Obj> &&
-                     !std::is_member_function_pointer<Obj>{}, size_t>
+                     !trait::is_pmf_v<Obj>, size_t>
     disconnect(const Obj &obj) {
         auto op = detail::get_object_ptr(obj);
 
