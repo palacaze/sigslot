@@ -7,7 +7,7 @@
 
 using namespace sigslot;
 
-std::atomic<std::int64_t> sum{0};
+static std::atomic<std::int64_t> sum{0};
 
 static void f(int i) { sum += i; }
 

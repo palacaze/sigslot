@@ -605,7 +605,7 @@ void test_scoped_connection_moving() {
         sig(1);
         assert(sum == 4);
 
-        auto sc3 = std::move(sc1);;
+        auto sc3 = std::move(sc1);
         sig(1);
         assert(sum == 7);
 
@@ -699,4 +699,3 @@ int main() {
     test_slot_count();
     return 0;
 }
-

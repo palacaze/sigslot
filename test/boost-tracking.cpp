@@ -6,7 +6,7 @@
 
 using namespace sigslot;
 
-int sum = 0;
+static int sum = 0;
 
 void f1(int i) { sum += i; }
 struct o1 { void operator()(int i) { sum += 2*i; } };
@@ -70,4 +70,3 @@ int main() {
     test_track_other();
     return 0;
 }
-

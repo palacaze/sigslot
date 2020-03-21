@@ -7,7 +7,7 @@
 
 using namespace sigslot;
 
-int sum = 0;
+static int sum = 0;
 
 void f1(int i) { sum += i; }
 struct o1 { void operator()(int i) { sum += 2*i; } };
@@ -19,7 +19,7 @@ struct s {
 
 struct oo {
     void operator()(int i) { sum += i; }
-    void operator()(double i) { sum += std::round(4*i); }
+    void operator()(double i) { sum += static_cast<int>(std::round(4*i)); }
 };
 
 struct dummy {};
@@ -168,4 +168,3 @@ int main() {
     test_track_generic_lambda();
     return 0;
 }
-

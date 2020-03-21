@@ -4,7 +4,7 @@
 
 using namespace sigslot;
 
-int sum = 0;
+static int sum = 0;
 
 void f(connection &c, int i) { sum += i; c.disconnect(); }
 
@@ -84,4 +84,3 @@ int main() {
     test_function_object_connection();
     test_lambda_connection();
 }
-

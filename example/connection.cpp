@@ -2,7 +2,7 @@
 #include <iostream>
 #include <string>
 
-int i = 0;
+static int i = 0;
 
 void f() {
     i += 1;
@@ -51,4 +51,3 @@ int main() {
 
     return 0;
 }
-
