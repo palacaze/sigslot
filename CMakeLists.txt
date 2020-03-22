@@ -78,8 +78,7 @@ install(
 
 # dependencies for examples and tests
 if(SIGSLOT_COMPILE_TESTS OR SIGSLOT_COMPILE_EXAMPLES)
-    set(CMAKE_AUTOMOC ON)
-    find_package(Boost QUIET)  # test of boost bridge with smart pointers
+    find_package(Boost COMPONENTS system QUIET)  # test of boost bridge with smart pointers
     find_package(Qt5 COMPONENTS Core Widgets Gui QUIET)  # optional test of Qt bridge
 endif()
 
