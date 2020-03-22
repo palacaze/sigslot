@@ -381,6 +381,11 @@ Experimental support for slot disconnection by supplying an appropriate function
 One can disconnect any number of slots using the `signal::disconnect()` method, which proposes 3 overloads to specify the disconnection criterion: One for callables, one for object pointers, tracking objects, and the last one takes both kinds.
 
 Any kind of callable can be passed, even function objects and lambdas, provided the lambdas have been bound to a variable (due to the uniqueness of lambdas).
+
+As pointers to member functions of unrelated types are not comparable, the overload that takes only a callable needs RTTI when passed a pointer to member function, function object or lambda.
+This limitation does not apply to free and static member functions.
+However, Sigslot can be compiled with RTTI is disabled and will disable the problematic cases.
+
 Here is an example demonstrating the feature.
 
 ```cpp

@@ -7,6 +7,19 @@
 #include <utility>
 #include <vector>
 
+#if defined __clang__ || (__GNUC__ > 5)
+#define SIGSLOT_MAY_ALIAS __attribute__((__may_alias__))
+#else
+#define SIGSLOT_MAY_ALIAS
+#endif
+
+#if defined(__GXX_RTTI) || defined(__cpp_rtti) || defined(_CPPRTTI)
+#define SIGSLOT_RTTI_ENABLED 1
+#include <typeinfo>
+#endif
+
+#include <iostream>
+
 namespace sigslot {
 
 namespace trait {
@@ -44,7 +57,8 @@ template <typename, typename = void>
 struct has_call_operator : std::false_type {};
 
 template <typename F>
-struct has_call_operator<F, void_t<decltype(&F::operator())>> : std::true_type {};
+struct has_call_operator<F, void_t<decltype(&std::remove_reference<F>::type::operator())>>
+    : std::true_type {};
 
 template <typename, typename, typename = void, typename = void>
 struct is_callable : std::false_type {};
@@ -76,7 +90,22 @@ template <typename T>
 struct is_weak_ptr_compatible<T, void_t<decltype(to_weak(std::declval<T>()))>>
     : is_weak_ptr<decltype(to_weak(std::declval<T>()))> {};
 
+template <typename T>
+struct delay {
+    using type = T;
+};
+
 } // namespace detail
+
+static constexpr bool with_rtti =
+#ifdef SIGSLOT_RTTI_ENABLED
+        true;
+#else
+        false;
+#endif
+
+template <typename T>
+constexpr bool delay_v = std::is_same<typename detail::delay<T>::type, T>::value;
 
 /// determine if a pointer is convertible into a "weak" pointer
 template <typename P>
@@ -108,81 +137,160 @@ class signal_base;
 
 namespace detail {
 
-/*
- * The following callable_pointer and object_pointer series of templates are
+/**
+ * The following function_traits and object_pointer series of templates are
  * used to circumvent the type-erasing that takes place in the slot_base
- * implementations. They do so by obtaining the address of the callables and
- * objects and casting them to a void type
- *
- * NOTE: I am not convinced there is no UB happening for pointers to member
- * functions, this is pretty funky.
+ * implementations. They are used to compare the stored functions and objects
+ * with another one for disconnection purpose.
  */
 
-using data_ptr = const void*;
-using call_pptr = data_ptr*;
+/*
+ * Function pointers and member function pointers size differ from compiler to
+ * compiler, and for virtual members compared to non virtual members. On some
+ * compilers, multiple inheritance has an impact too. Hence, we form an union
+ * big enough to store any kind of function pointer.
+ */
+namespace mock {
+
+struct a { virtual ~a() = default; void f(); virtual void g(); };
+struct b { virtual ~b() = default; virtual void h(); };
+struct c : a, b { void g() override; };
+
+union fun_types {
+    decltype(&c::g) m;
+    decltype(&a::g) v;
+    decltype(&a::f) d;
+    void (*f)();
+    void *o;
+ };
+
+} // namespace mock
+
+/*
+ * This union is used to compare function pointers
+ * Generic callables cannot be compared. Here we compare pointers but there is
+ * no guarantee that this always works.
+ */
+union SIGSLOT_MAY_ALIAS func_ptr {
+    void* value() {
+        return &data[0];
+    }
+
+    const void* value() const {
+        return &data[0];
+    }
+
+    template <typename T>
+    T& value() {
+        return *static_cast<T*>(value());
+    }
+
+    template <typename T>
+    const T& value() const {
+        return *static_cast<const T*>(value());
+    }
+
+    inline explicit operator bool() const {
+        return value() != nullptr;
+    }
+
+    inline bool operator==(const func_ptr &o) const {
+        return std::equal(std::begin(data), std::end(data), std::begin(o.data));
+    }
+
+    mock::fun_types _;
+    char data[sizeof(mock::fun_types)];
+};
+
 
 template <typename T, typename = void>
-struct callable_pointer {
-    static void get_ptr(const T &, call_pptr p) {
-        *p = nullptr;
+struct function_traits {
+    static void ptr(const T &/*t*/, func_ptr &d) {
+        d.value<std::nullptr_t>() = nullptr;
     }
+
+    static constexpr bool is_disconnectable = false;
+    static constexpr bool must_check_object = true;
 };
 
 template <typename T>
-struct callable_pointer<T, std::enable_if_t<trait::is_func_v<T>>> {
-    static void get_ptr(const T &t, call_pptr p) {
-        *p = reinterpret_cast<data_ptr>(t);
+struct function_traits<T, std::enable_if_t<trait::is_func_v<T>>> {
+    static void ptr(const T &t, func_ptr &d) {
+        d.value<T*>() = &t;
     }
+
+    static constexpr bool is_disconnectable = true;
+    static constexpr bool must_check_object = false;
 };
 
 template <typename T>
-struct callable_pointer<T*, std::enable_if_t<trait::is_func_v<T>>> {
-    static void get_ptr(const T *t, call_pptr p) {
-        *p = reinterpret_cast<data_ptr>(t);
+struct function_traits<T*, std::enable_if_t<trait::is_func_v<T>>> {
+    static void ptr(T *t, func_ptr &d) {
+        d.value<T*>() = t;
     }
+
+    static constexpr bool is_disconnectable = true;
+    static constexpr bool must_check_object = false;
 };
 
 template <typename T>
-struct callable_pointer<T, std::enable_if_t<trait::is_pmf_v<T>>> {
-    static void get_ptr(const T &t, call_pptr p) {
-        *p = *const_cast<call_pptr>(reinterpret_cast<const void*const*>(&t));
+struct function_traits<T, std::enable_if_t<trait::is_pmf_v<T>>> {
+    static void ptr(const T &t, func_ptr &d) {
+        d.value<T>() = t;
     }
+
+    static constexpr bool is_disconnectable = trait::with_rtti;
+    static constexpr bool must_check_object = true;
 };
 
 // for function objects, the assumption is that we are looking for the call operator
 template <typename T>
-struct callable_pointer<T, std::enable_if_t<trait::has_call_operator_v<T>>> {
-    static void get_ptr(const T &/*t*/, call_pptr p) {
-        using U = decltype(&T::operator());
-        callable_pointer<U>::get_ptr(&T::operator(), p);
+struct function_traits<T, std::enable_if_t<trait::has_call_operator_v<T>>> {
+    using call_type = decltype(&std::remove_reference<T>::type::operator());
+
+    static void ptr(const T &/*t*/, func_ptr &d) {
+        function_traits<call_type>::ptr(&T::operator(), d);
     }
+
+    static constexpr bool is_disconnectable = function_traits<call_type>::is_disconnectable;
+    static constexpr bool must_check_object = function_traits<call_type>::must_check_object;
 };
 
 template <typename T>
-void get_callable_ptr(const T &t, call_pptr p) {
-    callable_pointer<T>::get_ptr(t, p);
+func_ptr get_function_ptr(const T &t) {
+    func_ptr d;
+    std::uninitialized_fill(std::begin(d.data), std::end(d.data), '\0');
+    function_traits<std::decay_t<T>>::ptr(t, d);
+    return d;
 }
 
+/*
+ * obj_ptr is used to store a pointer to an object.
+ * The object_pointer traits are needed to handle trackable objects correctly,
+ * as they are likely to not be pointers.
+ */
+using obj_ptr = const void*;
+
 template <typename T>
-data_ptr get_object_ptr(const T &t);
+obj_ptr get_object_ptr(const T &t);
 
 template <typename T, typename = void>
 struct object_pointer {
-    static data_ptr get_ptr(const T&) {
+    static obj_ptr get(const T&) {
         return nullptr;
     }
 };
 
 template <typename T>
 struct object_pointer<T*, std::enable_if_t<trait::is_pointer_v<T*>>> {
-    static data_ptr get_ptr(const T *t) {
-        return reinterpret_cast<data_ptr>(t);
+    static obj_ptr get(const T *t) {
+        return reinterpret_cast<obj_ptr>(t);
     }
 };
 
 template <typename T>
 struct object_pointer<T, std::enable_if_t<trait::is_weak_ptr_v<T>>> {
-    static data_ptr get_ptr(const T &t) {
+    static obj_ptr get(const T &t) {
         auto p = t.lock();
         return get_object_ptr(p);
     }
@@ -193,14 +301,14 @@ struct object_pointer<T, std::enable_if_t<!trait::is_pointer_v<T> &&
                                           !trait::is_weak_ptr_v<T> &&
                                           trait::is_weak_ptr_compatible_v<T>>>
 {
-    static data_ptr get_ptr(const T &t) {
-        return t ? reinterpret_cast<data_ptr>(t.get()) : nullptr;
+    static obj_ptr get(const T &t) {
+        return t ? reinterpret_cast<obj_ptr>(t.get()) : nullptr;
     }
 };
 
 template <typename T>
-data_ptr get_object_ptr(const T &t) {
-    return object_pointer<T>::get_ptr(t);
+obj_ptr get_object_ptr(const T &t) {
+    return object_pointer<T>::get(t);
 }
 
 
@@ -574,21 +682,65 @@ public:
         }
     }
 
+    // check if we are storing callable c
+    template <typename C>
+    bool has_callable(const C &c) const {
+        auto cp = get_function_ptr(c);
+        auto p = get_callable();
+        return cp && p && cp == p;
+    }
+
+    template <typename C>
+    std::enable_if_t<function_traits<C>::must_check_object, bool>
+    has_full_callable(const C &c) const {
+        return has_callable(c) && check_class_type<std::decay_t<C>>();
+    }
+
+    template <typename C>
+    std::enable_if_t<!function_traits<C>::must_check_object, bool>
+    has_full_callable(const C &c) const {
+        return has_callable(c);
+    }
+
+    // check if we are storing object o
+    template <typename O>
+    bool has_object(const O &o) const {
+        return get_object() == get_object_ptr(o);
+    }
+
+protected:
+    void do_disconnect() final {
+        cleaner.clean(this);
+    }
+
     // retieve a pointer to the object embedded in the slot
-    virtual data_ptr get_object() const noexcept {
+    virtual obj_ptr get_object() const noexcept {
         return nullptr;
     }
 
     // retieve a pointer to the callable embedded in the slot
-    virtual void get_callable(call_pptr p) const noexcept {
-        *p = nullptr;
+    virtual func_ptr get_callable() const noexcept {
+        return get_function_ptr(nullptr);
     }
 
-protected:
-
-    void do_disconnect() final {
-        cleaner.clean(this);
+#ifdef SIGSLOT_RTTI_ENABLED
+    // retieve a pointer to the callable embedded in the slot
+    virtual const std::type_info& get_callable_type() const noexcept {
+        return typeid(nullptr);
     }
+
+private:
+    template <typename U>
+    bool check_class_type() const {
+        return typeid(U) == get_callable_type();
+    }
+
+#else
+    template <typename U>
+    bool check_class_type() const {
+        return false;
+    }
+#endif
 
 private:
     cleanable &cleaner;
@@ -611,9 +763,15 @@ protected:
         func(args...);
     }
 
-    void get_callable(call_pptr p) const noexcept override {
-        get_callable_ptr(func, p);
+    func_ptr get_callable() const noexcept override {
+        return get_function_ptr(func);
     }
+
+#ifdef SIGSLOT_RTTI_ENABLED
+    const std::type_info& get_callable_type() const noexcept override {
+        return typeid(func);
+    }
+#endif
 
 private:
     std::decay_t<Func> func;
@@ -630,15 +788,22 @@ public:
         : slot_base<Args...>(c)
         , func{std::forward<F>(f)} {}
 
+    connection conn;
+
+protected:
     void call_slot(Args ...args) override {
         func(conn, args...);
     }
 
-    void get_callable(call_pptr p) const noexcept override {
-        get_callable_ptr(func, p);
+    func_ptr get_callable() const noexcept override {
+        return get_function_ptr(func);
     }
 
-    connection conn;
+#ifdef SIGSLOT_RTTI_ENABLED
+    const std::type_info& get_callable_type() const noexcept override {
+        return typeid(func);
+    }
+#endif
 
 private:
     std::decay_t<Func> func;
@@ -658,17 +823,24 @@ public:
         , pmf{std::forward<F>(f)}
         , ptr{std::forward<P>(p)} {}
 
+protected:
     void call_slot(Args ...args) override {
         ((*ptr).*pmf)(args...);
     }
 
-    void get_callable(call_pptr p) const noexcept override {
-        get_callable_ptr(pmf, p);
+    func_ptr get_callable() const noexcept override {
+        return get_function_ptr(pmf);
     }
 
-    data_ptr get_object() const noexcept override {
+    obj_ptr get_object() const noexcept override {
         return get_object_ptr(ptr);
     }
+
+#ifdef SIGSLOT_RTTI_ENABLED
+    const std::type_info& get_callable_type() const noexcept override {
+        return typeid(pmf);
+    }
+#endif
 
 private:
     std::decay_t<Pmf> pmf;
@@ -687,19 +859,25 @@ public:
         , pmf{std::forward<F>(f)}
         , ptr{std::forward<P>(p)} {}
 
+    connection conn;
+
+protected:
     void call_slot(Args ...args) override {
         ((*ptr).*pmf)(conn, args...);
     }
 
-    void get_callable(call_pptr p) const noexcept override {
-        get_callable_ptr(pmf, p);
+    func_ptr get_callable() const noexcept override {
+        return get_function_ptr(pmf);
     }
-
-    data_ptr get_object() const noexcept override {
+    obj_ptr get_object() const noexcept override {
         return get_object_ptr(ptr);
     }
 
-    connection conn;
+#ifdef SIGSLOT_RTTI_ENABLED
+    const std::type_info& get_callable_type() const noexcept override {
+        return typeid(pmf);
+    }
+#endif
 
 private:
     std::decay_t<Pmf> pmf;
@@ -725,6 +903,7 @@ public:
         return !ptr.expired() && slot_state::connected();
     }
 
+protected:
     void call_slot(Args ...args) override {
         auto sp = ptr.lock();
         if (!sp) {
@@ -736,13 +915,19 @@ public:
         }
     }
 
-    void get_callable(call_pptr p) const noexcept override {
-        get_callable_ptr(func, p);
+    func_ptr get_callable() const noexcept override {
+        return get_function_ptr(func);
     }
 
-    data_ptr get_object() const noexcept override {
+    obj_ptr get_object() const noexcept override {
         return get_object_ptr(ptr);
     }
+
+#ifdef SIGSLOT_RTTI_ENABLED
+    const std::type_info& get_callable_type() const noexcept override {
+        return typeid(func);
+    }
+#endif
 
 private:
     std::decay_t<Func> func;
@@ -768,6 +953,7 @@ public:
         return !ptr.expired() && slot_state::connected();
     }
 
+protected:
     void call_slot(Args ...args) override {
         auto sp = ptr.lock();
         if (!sp) {
@@ -779,13 +965,19 @@ public:
         }
     }
 
-    void get_callable(call_pptr p) const noexcept override {
-        get_callable_ptr(pmf, p);
+    func_ptr get_callable() const noexcept override {
+        return get_function_ptr(pmf);
     }
 
-    data_ptr get_object() const noexcept override {
+    obj_ptr get_object() const noexcept override {
         return get_object_ptr(ptr);
     }
+
+#ifdef SIGSLOT_RTTI_ENABLED
+    const std::type_info& get_callable_type() const noexcept override {
+        return typeid(pmf);
+    }
+#endif
 
 private:
     std::decay_t<Pmf> pmf;
@@ -1053,20 +1245,20 @@ public:
      * Effect: Disconnects all the slots bound to the callable in argument.
      * Safety: Thread-safety depends on locking policy.
      *
-     * The callable may be a function, a pointer to member functione a function
-     * object or a (reference to a) lambda.
+     * If the callable is a free or static member function, this overload is always
+     * available. However, RTTI is needed for it to work for pointer to member
+     * functions, function objects or and (references to) lambdas, because the
+     * C++ spec does not mandate the pointers to member functions to be unique.
      *
      * @param c a callable
      * @return the number of disconnected slots
      */
     template <typename Callable>
-    std::enable_if_t<trait::is_callable_v<arg_list, Callable> ||
-                     trait::is_callable_v<ext_arg_list, Callable> ||
-                     trait::is_pmf_v<Callable>, size_t>
-    disconnect(Callable c) {
-        detail ::data_ptr cp = nullptr;
-        detail::get_callable_ptr(c, &cp);
-
+    std::enable_if_t<(trait::is_callable_v<arg_list, Callable> ||
+                      trait::is_callable_v<ext_arg_list, Callable> ||
+                      trait::is_pmf_v<Callable>) &&
+                     detail::function_traits<Callable>::is_disconnectable, size_t>
+    disconnect(const Callable &c) {
         lock_type lock(m_mutex);
         auto &groups = detail::cow_write(m_slots);
 
@@ -1075,9 +1267,9 @@ public:
         for (auto &group : groups) {
             size_t i = 0;
             while (i < group.size()) {
-                detail::data_ptr cp1 = nullptr;
-                group[i]->get_callable(&cp1);
-                if (cp && cp1 && cp == cp1) {
+                // full_callable because we need to ascertain the sue of the
+                // right callable type in the absence of an object.
+                if (group[i]->has_full_callable(c)) {
                     remove_slot(group, i);
                     ++count;
                 } else {
@@ -1106,8 +1298,6 @@ public:
                      !trait::is_callable_v<ext_arg_list, Obj> &&
                      !trait::is_pmf_v<Obj>, size_t>
     disconnect(const Obj &obj) {
-        auto op = detail::get_object_ptr(obj);
-
         lock_type lock(m_mutex);
         auto &groups = detail::cow_write(m_slots);
 
@@ -1116,7 +1306,7 @@ public:
         for (auto &group : groups) {
             size_t i = 0;
             while (i < group.size()) {
-                if (group[i]->get_object() == op) {
+                if (group[i]->has_object(obj)) {
                     remove_slot(group, i);
                     ++count;
                 } else {
@@ -1142,11 +1332,7 @@ public:
      * @return the number of disconnected slots
      */
     template <typename Callable, typename Obj>
-    size_t disconnect(Callable c, const Obj &obj) {
-        detail ::data_ptr cp = nullptr;
-        detail::get_callable_ptr(c, &cp);
-        auto op = detail::get_object_ptr(obj);
-
+    size_t disconnect(const Callable &c, const Obj &obj) {
         lock_type lock(m_mutex);
         auto &groups = detail::cow_write(m_slots);
 
@@ -1155,10 +1341,7 @@ public:
         for (auto &group : groups) {
             size_t i = 0;
             while (i < group.size()) {
-                detail::data_ptr scp = nullptr;
-                group[i]->get_callable(&scp);
-                auto sop = group[i]->get_object();
-                if (sop == op && scp && cp && scp == cp) {
+                if (group[i]->has_object(obj) && group[i]->has_callable(c)) {
                     remove_slot(group, i);
                     ++count;
                 } else {

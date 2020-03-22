@@ -329,6 +329,7 @@ void test_disconnection_by_callable() {
         assert(sum == 5);
     }
 
+#ifdef SIGSLOT_RTTI_ENABLED
     // disconnect by pmf
     {
         sum = 0;
@@ -372,6 +373,7 @@ void test_disconnection_by_callable() {
         sig(1);
         assert(sum == 5);
     }
+#endif
 }
 
 void test_disconnection_by_object() {
