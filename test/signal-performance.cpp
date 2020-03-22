@@ -23,13 +23,13 @@ void test_signal_performance() {
         // Measure first signal time as reference
         const TimePoint begin = Clock::now();
         sig();
-        ref_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - begin).count();
+        ref_ns = double(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - begin).count());
     }
 
     // Measure signal after all slot were disconnected
     const TimePoint begin = Clock::now();
     sig();
-    const double after_disconnection_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - begin).count();
+    const double after_disconnection_ns = double(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - begin).count());
 
     // Ensure that the signal cost is not > at 10%
     const auto max_delta = 0.1;
