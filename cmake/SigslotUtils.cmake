@@ -63,6 +63,9 @@ option(SIGSLOT_SANITIZE_UNDEFINED "Compile with undefined sanitizer support" OFF
 
 # common properties
 function(sigslot_set_properties target scope)
+    target_compile_features(${target} ${scope} cxx_std_14)
+    set_target_properties(${target} PROPERTIES CXX_EXTENSIONS OFF)
+
     # account for options
     target_link_libraries(${target} ${scope}
         $<$<BOOL:${SIGSLOT_ENABLE_COMMON_WARNINGS}>:Sigslot_CommonWarnings>
