@@ -31,6 +31,25 @@ target_compile_options(Sigslot_CommonWarnings INTERFACE
     $<$<CXX_COMPILER_ID:MSVC>:/W3>
 )
 
+add_library(Sigslot_ManyWarnings INTERFACE)
+target_compile_options(Sigslot_ManyWarnings INTERFACE
+    $<$<BOOL:${SIGSLOT_COMPILER_CLANG_OR_CLANGCL_OR_GCC}>:
+        -Weverything;-Wno-c++98-compat;-Wno-c++98-compat-pedantic;-Wno-unused-macros;
+        -Wno-newline-eof;-Wno-exit-time-destructors;-Wno-global-constructors;
+        -Wno-gnu-zero-variadic-macro-arguments;-Wno-documentation;-Wno-missing-prototypes;
+        -Wno-padded;-Wno-weak-vtables;-Wno-c++17-extensions;-Wno-shadow-field-in-constructor;
+        -Wno-return-std-move-in-c++11>
+    $<$<BOOL:${SIGSLOT_COMPILER_CLANG_OR_GCC}>:-fdiagnostics-color=always;-pipe>
+    $<$<CXX_COMPILER_ID:MSVC>:/W4>
+)
+
+# RTTI
+add_library(Sigslot_NoRTTI INTERFACE)
+target_compile_options(Sigslot_NoRTTI INTERFACE
+    $<$<BOOL:${SIGSLOT_COMPILER_CLANG_OR_CLANGCL_OR_GCC}>:-fno-rtti>
+    $<$<CXX_COMPILER_ID:MSVC>:/GR->
+)
+
 # Profiling
 add_library(Sigslot_Profiling INTERFACE)
 target_compile_options(Sigslot_Profiling INTERFACE
@@ -66,6 +85,8 @@ target_link_libraries(Sigslot_UndefinedSanitizer INTERFACE
 )
 
 option(SIGSLOT_ENABLE_COMMON_WARNINGS "Enable common compiler flags" ON)
+option(SIGSLOT_ENABLE_MANY_WARNINGS "Enable most compiler flags" OFF)
+option(SIGSLOT_DISABLE_RTTI "Disable Runtime Type Information" OFF)
 option(SIGSLOT_ENABLE_LTO "Enable link time optimization (release only)" OFF)
 option(SIGSLOT_ENABLE_PROFILING "Add compile flags to help with profiling" OFF)
 option(SIGSLOT_SANITIZE_ADDRESS "Compile with address sanitizer support" OFF)
@@ -80,6 +101,8 @@ function(sigslot_set_properties target scope)
     # account for options
     target_link_libraries(${target} ${scope}
         $<$<BOOL:${SIGSLOT_ENABLE_COMMON_WARNINGS}>:Sigslot_CommonWarnings>
+        $<$<BOOL:${SIGSLOT_ENABLE_MANY_WARNINGS}>:Sigslot_ManyWarnings>
+        $<$<BOOL:${SIGSLOT_DISABLE_RTTI}>:Sigslot_NoRTTI>
         $<$<BOOL:${SIGSLOT_ENABLE_PROFILING}>:Sigslot_Profiling>
         $<$<BOOL:${SIGSLOT_SANITIZE_ADDRESS}>:Sigslot_AddressSanitizer>
         $<$<BOOL:${SIGSLOT_SANITIZE_THREADS}>:Sigslot_ThreadSanitizer>

@@ -1,7 +1,7 @@
 add_custom_target(examples COMMENT "Build all the examples.")
 
 macro(pal_create_example target ut)
-    add_executable(${target} EXCLUDE_FROM_ALL "${ut}")
+    add_executable(${target} "${ut}")
     target_link_libraries(${target} PRIVATE Pal::Sigslot)
     add_dependencies(examples ${target})
     sigslot_set_properties(${target} PRIVATE)
