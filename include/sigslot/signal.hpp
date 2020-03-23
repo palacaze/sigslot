@@ -215,7 +215,7 @@ struct function_traits {
 
 template <typename T>
 struct function_traits<T, std::enable_if_t<trait::is_func_v<T>>> {
-    static void ptr(const T &t, func_ptr &d) {
+    static void ptr(T &t, func_ptr &d) {
         d.value<T*>() = &t;
     }
 

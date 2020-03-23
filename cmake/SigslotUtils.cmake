@@ -1,7 +1,12 @@
 # Compiler name
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    set(SIGSLOT_COMPILER_CLANG ON)
-    set(SIGSLOT_COMPILER_NAME "clang")
+    if (CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC")
+        set(SIGSLOT_COMPILER_CLANGCL ON)
+        set(SIGSLOT_COMPILER_NAME "clang-cl")
+    else()
+        set(SIGSLOT_COMPILER_CLANG ON)
+        set(SIGSLOT_COMPILER_NAME "clang")
+    endif()
 elseif (CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     set(SIGSLOT_COMPILER_GCC ON)
     set(SIGSLOT_COMPILER_NAME "gcc")
@@ -13,17 +18,23 @@ endif()
 if (SIGSLOT_COMPILER_CLANG OR SIGSLOT_COMPILER_GCC)
     set(SIGSLOT_COMPILER_CLANG_OR_GCC ON)
 endif()
+if (SIGSLOT_COMPILER_CLANG_OR_GCC OR SIGSLOT_COMPILER_CLANGCL)
+    set(SIGSLOT_COMPILER_CLANG_OR_CLANGCL_OR_GCC ON)
+endif()
 
 add_library(Sigslot_CommonWarnings INTERFACE)
 target_compile_options(Sigslot_CommonWarnings INTERFACE
-    $<$<BOOL:${SIGSLOT_COMPILER_CLANG_OR_GCC}>:-Wall;-Wextra;-fdiagnostics-color=always;-pipe>
+    $<$<BOOL:${SIGSLOT_COMPILER_CLANG_OR_CLANGCL_OR_GCC}>:-Wall;-Wextra>
+    $<$<BOOL:${SIGSLOT_COMPILER_CLANG_OR_GCC}>:-fdiagnostics-color=always;-pipe>
+    $<$<BOOL:${SIGSLOT_COMPILER_CLANGCL}>:
+        -Wno-c++98-compat;-Wno-c++98-compat-pedantic;-Wno-documentation;-Wno-missing-prototypes>
     $<$<CXX_COMPILER_ID:MSVC>:/W3>
 )
 
 # Profiling
 add_library(Sigslot_Profiling INTERFACE)
 target_compile_options(Sigslot_Profiling INTERFACE
-    $<$<BOOL:${SIGSLOT_COMPILER_CLANG_OR_GCC}>:-g;-fno-omit-frame-pointer>
+    $<$<BOOL:${SIGSLOT_COMPILER_CLANG_OR_CLANGCL_OR_GCC}>:-g;-fno-omit-frame-pointer>
 )
 
 # sanitizers
