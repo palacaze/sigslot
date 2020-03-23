@@ -614,7 +614,7 @@ protected:
  * scoped_connection is a RAII version of connection
  * It disconnects the slot from the signal upon destruction.
  */
-class scoped_connection : public connection {
+class scoped_connection final : public connection {
 public:
     scoped_connection() = default;
     ~scoped_connection() override {
@@ -751,7 +751,7 @@ private:
  * whenever the function call operator of its slot_base base class is called.
  */
 template <typename Func, typename... Args>
-class slot : public slot_base<Args...> {
+class slot final : public slot_base<Args...> {
 public:
     template <typename F>
     constexpr slot(cleanable &c, F && f)
@@ -781,7 +781,7 @@ private:
  * Variation of slot that prepends a connection object to the callable
  */
 template <typename Func, typename... Args>
-class slot_extended : public slot_base<Args...> {
+class slot_extended final : public slot_base<Args...> {
 public:
     template <typename F>
     constexpr slot_extended(cleanable &c, F && f)
@@ -815,7 +815,7 @@ private:
  * base class is called.
  */
 template <typename Pmf, typename Ptr, typename... Args>
-class slot_pmf : public slot_base<Args...> {
+class slot_pmf final : public slot_base<Args...> {
 public:
     template <typename F, typename P>
     constexpr slot_pmf(cleanable &c, F && f, P && p)
@@ -851,7 +851,7 @@ private:
  * Variation of slot that prepends a connection object to the callable
  */
 template <typename Pmf, typename Ptr, typename... Args>
-class slot_pmf_extended : public slot_base<Args...> {
+class slot_pmf_extended final : public slot_base<Args...> {
 public:
     template <typename F, typename P>
     constexpr slot_pmf_extended(cleanable &c, F && f, P && p)
@@ -890,7 +890,7 @@ private:
  * on said object destruction.
  */
 template <typename Func, typename WeakPtr, typename... Args>
-class slot_tracked : public slot_base<Args...> {
+class slot_tracked final : public slot_base<Args...> {
 public:
     template <typename F, typename P>
     constexpr slot_tracked(cleanable &c, F && f, P && p)
@@ -940,7 +940,7 @@ private:
  * disconnect the slot on said object destruction.
  */
 template <typename Pmf, typename WeakPtr, typename... Args>
-class slot_pmf_tracked : public slot_base<Args...> {
+class slot_pmf_tracked final : public slot_base<Args...> {
 public:
     template <typename F, typename P>
     constexpr slot_pmf_tracked(cleanable &c, F && f, P && p)
@@ -1009,7 +1009,7 @@ private:
  * @tparam T... the argument types of the emitting and slots functions.
  */
 template <typename Lockable, typename... T>
-class signal_base : public detail::cleanable {
+class signal_base final : public detail::cleanable {
     template <typename L>
     using is_thread_safe = std::integral_constant<bool, !std::is_same<L, detail::null_mutex>::value>;
 
