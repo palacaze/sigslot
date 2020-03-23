@@ -999,7 +999,7 @@ private:
  * It does not allow slots to return a value.
  *
  * Slot execution order can be constrained by assigning group ids to the slots.
- * The execution order of slots in a same group in unspecified and should not be
+ * The execution order of slots in a same group is unspecified and should not be
  * relied upon, however groups are executed in ascending group ids order. When
  * the group id of a slot is not set, it is assigned to the group 0.
  * It is recommended to use small id numbers, as the groups are stored in a
