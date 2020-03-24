@@ -417,7 +417,7 @@ private:
  * Specializations for thread-safe code path
  */
 template <typename T>
-const T& cow_read(T &v) {
+const T& cow_read(const T &v) {
     return v;
 }
 
@@ -1027,7 +1027,7 @@ class signal_base final : public detail::cleanable {
     using group_type = std::vector<slot_ptr>;
     using list_type = std::vector<group_type>;
 
-    cow_copy_type<list_type, Lockable> slots_copy() {
+    inline cow_copy_type<list_type, Lockable> slots_copy() {
         lock_type lock(m_mutex);
         return m_slots;
     }
@@ -1080,7 +1080,7 @@ public:
         }
 
         // copy slots to execute them out of the lock
-        auto copy = slots_copy();
+        cow_copy_type<list_type, Lockable> copy = slots_copy();
 
         for (const auto &group : detail::cow_read(copy)) {
             for (const auto &s : group) {
@@ -1390,9 +1390,9 @@ public:
      * Safety: thread safe
      */
     size_t slot_count() noexcept {
-        auto copy = slots_copy();
+        cow_copy_type<list_type, Lockable> copy = slots_copy();
         size_t count = 0;
-        for (auto &group : detail::cow_read(copy)) {
+        for (const auto &group : detail::cow_read(copy)) {
             count += group.size();
         }
         return count;
