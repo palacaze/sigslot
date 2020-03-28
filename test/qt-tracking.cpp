@@ -3,8 +3,6 @@
 #include <sigslot/signal.hpp>
 #include <cassert>
 
-using namespace sigslot;
-
 static int sum = 0;
 
 void f1(int i) { sum += i; }
@@ -31,7 +29,7 @@ public slots:
 
 void test_track_shared() {
     sum = 0;
-    signal<int> sig;
+    sigslot::signal<int> sig;
 
     auto s1 = QSharedPointer<s>::create();
     sig.connect(&s::f1, s1);
@@ -54,7 +52,7 @@ void test_track_shared() {
 
 void test_track_shared_other() {
     sum = 0;
-    signal<int> sig;
+    sigslot::signal<int> sig;
 
     auto d1 = QSharedPointer<dummy>::create();
     sig.connect(f1, d1);
@@ -77,7 +75,7 @@ void test_track_shared_other() {
 
 void test_track_qobject() {
     sum = 0;
-    signal<int> sig;
+    sigslot::signal<int> sig;
 
     {
         MyObject o;
@@ -93,7 +91,7 @@ void test_track_qobject() {
 
 void test_track_qobject_other() {
     sum = 0;
-    signal<int> sig;
+    sigslot::signal<int> sig;
 
     {
         MyObject o;

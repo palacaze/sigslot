@@ -5,18 +5,16 @@
 #include <cassert>
 #include <array>
 
-using namespace sigslot;
-
 static std::atomic<std::int64_t> sum{0};
 
 static void f(int i) { sum += i; }
 
-static void emit_many(signal<int> &sig) {
+static void emit_many(sigslot::signal<int> &sig) {
     for (int i = 0; i < 10000; ++i)
         sig(1);
 }
 
-static void connect_emit(signal<int> &sig) {
+static void connect_emit(sigslot::signal<int> &sig) {
     for (int i = 0; i < 100; ++i) {
         auto s = sig.connect_scoped(f);
         for (int j = 0; j < 100; ++j)
@@ -24,7 +22,10 @@ static void connect_emit(signal<int> &sig) {
     }
 }
 
-static void connect_cross(signal<int> &s1, signal<int> &s2, std::atomic<int> &go) {
+static void connect_cross(sigslot::signal<int> &s1,
+                          sigslot::signal<int> &s2,
+                          std::atomic<int> &go)
+{
     auto cross = s1.connect([&](int i) {
         if (i & 1)
             f(i);
@@ -43,7 +44,7 @@ static void connect_cross(signal<int> &s1, signal<int> &s2, std::atomic<int> &go
 static void test_threaded_mix() {
     sum = 0;
 
-    signal<int> sig;
+    sigslot::signal<int> sig;
 
     std::array<std::thread, 10> threads;
     for (auto &t : threads)
@@ -56,7 +57,7 @@ static void test_threaded_mix() {
 static void test_threaded_emission() {
     sum = 0;
 
-    signal<int> sig;
+    sigslot::signal<int> sig;
     sig.connect(f);
 
     std::array<std::thread, 10> threads;
@@ -73,8 +74,8 @@ static void test_threaded_emission() {
 static void test_threaded_crossed() {
     sum = 0;
 
-    signal<int> sig1;
-    signal<int> sig2;
+    sigslot::signal<int> sig1;
+    sigslot::signal<int> sig2;
 
     std::atomic<int> go{0};
 

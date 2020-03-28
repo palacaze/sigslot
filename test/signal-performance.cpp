@@ -3,8 +3,7 @@
 #include <chrono>
 #include <cassert>
 #include <iostream>
-
-using namespace sigslot;
+#include <vector>
 
 void test_signal_performance() {
     using Clock = std::chrono::high_resolution_clock;
@@ -14,7 +13,7 @@ void test_signal_performance() {
     double ref_ns = 0.;
     sigslot::signal<> sig;
     {
-        std::vector<scoped_connection> connections;
+        std::vector<sigslot::scoped_connection> connections;
         connections.reserve(count);
         for (int i = 0; i < count; i++) {
             connections.emplace_back(sig.connect([]{}));

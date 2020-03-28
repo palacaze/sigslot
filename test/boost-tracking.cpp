@@ -4,8 +4,6 @@
 #include <sigslot/signal.hpp>
 #include <cassert>
 
-using namespace sigslot;
-
 static int sum = 0;
 
 void f1(int i) { sum += i; }
@@ -21,7 +19,7 @@ struct dummy {};
 
 void test_track_shared() {
     sum = 0;
-    signal<int> sig;
+    sigslot::signal<int> sig;
 
     auto s1 = boost::make_shared<s>();
     sig.connect(&s::f1, s1);
@@ -44,7 +42,7 @@ void test_track_shared() {
 
 void test_track_other() {
     sum = 0;
-    signal<int> sig;
+    sigslot::signal<int> sig;
 
     auto d1 = boost::make_shared<dummy>();
     sig.connect(f1, d1);
