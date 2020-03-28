@@ -90,11 +90,6 @@ template <typename T>
 struct is_weak_ptr_compatible<T, void_t<decltype(to_weak(std::declval<T>()))>>
     : is_weak_ptr<decltype(to_weak(std::declval<T>()))> {};
 
-template <typename T>
-struct delay {
-    using type = T;
-};
-
 } // namespace detail
 
 static constexpr bool with_rtti =
@@ -103,9 +98,6 @@ static constexpr bool with_rtti =
 #else
         false;
 #endif
-
-template <typename T>
-constexpr bool delay_v = std::is_same<typename detail::delay<T>::type, T>::value;
 
 /// determine if a pointer is convertible into a "weak" pointer
 template <typename P>
