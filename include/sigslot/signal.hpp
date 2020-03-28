@@ -1,6 +1,5 @@
 #pragma once
 #include <atomic>
-#include <cassert>
 #include <memory>
 #include <mutex>
 #include <type_traits>
@@ -126,6 +125,8 @@ constexpr bool is_pmf_v = std::is_member_function_pointer<T>::value;
 
 template <typename, typename...>
 class signal_base;
+
+using group_id = std::int32_t;
 
 namespace detail {
 
@@ -452,8 +453,8 @@ inline std::shared_ptr<B> make_shared(Arg && ... arg) {
  */
 class slot_state {
 public:
-    constexpr slot_state() noexcept
-        : m_group(0)
+    constexpr slot_state(group_id gid) noexcept
+        : m_group(gid)
         , m_index(0)
         , m_connected(true)
         , m_blocked(false)
@@ -478,20 +479,24 @@ public:
 protected:
     virtual void do_disconnect() {}
 
-    std::uint32_t& group() {
-        return m_group;
+    auto index() const {
+        return m_index;
     }
 
-    std::uint32_t& index() {
+    auto& index() {
         return m_index;
+    }
+
+    group_id group() const {
+        return m_group;
     }
 
 private:
     template <typename, typename...>
     friend class ::sigslot::signal_base;
 
-    std::uint32_t m_group;  // slot group this slot belongs to
-    std::uint32_t m_index;  // index into the array of slot pointers inside the signal
+    const group_id m_group;  // slot group this slot belongs to
+    std::uint32_t m_index;   // index into the array of slot pointers inside the signal
     std::atomic<bool> m_connected;
     std::atomic<bool> m_blocked;
 };
@@ -651,6 +656,7 @@ class slot_base;
 template <typename... T>
 using slot_ptr = std::shared_ptr<slot_base<T...>>;
 
+
 /* A base class for slot objects. This base type only depends on slot argument
  * types, it will be used as an element in an intrusive singly-linked list of
  * slots, hence the public next member.
@@ -660,7 +666,10 @@ class slot_base : public slot_state {
 public:
     using base_types = trait::typelist<Args...>;
 
-    explicit slot_base(cleanable &c) : cleaner(c) {}
+    explicit slot_base(cleanable &c, group_id gid)
+        : slot_state(gid)
+        , cleaner(c)
+    {}
     ~slot_base() override = default;
 
     // method effectively responsible for calling the "slot" function with
@@ -745,9 +754,9 @@ private:
 template <typename Func, typename... Args>
 class slot final : public slot_base<Args...> {
 public:
-    template <typename F>
-    constexpr slot(cleanable &c, F && f)
-        : slot_base<Args...>(c)
+    template <typename F, typename Gid>
+    constexpr slot(cleanable &c, F && f, Gid gid)
+        : slot_base<Args...>(c, gid)
         , func{std::forward<F>(f)} {}
 
 protected:
@@ -776,8 +785,8 @@ template <typename Func, typename... Args>
 class slot_extended final : public slot_base<Args...> {
 public:
     template <typename F>
-    constexpr slot_extended(cleanable &c, F && f)
-        : slot_base<Args...>(c)
+    constexpr slot_extended(cleanable &c, F && f, group_id gid)
+        : slot_base<Args...>(c, gid)
         , func{std::forward<F>(f)} {}
 
     connection conn;
@@ -810,8 +819,8 @@ template <typename Pmf, typename Ptr, typename... Args>
 class slot_pmf final : public slot_base<Args...> {
 public:
     template <typename F, typename P>
-    constexpr slot_pmf(cleanable &c, F && f, P && p)
-        : slot_base<Args...>(c)
+    constexpr slot_pmf(cleanable &c, F && f, P && p, group_id gid)
+        : slot_base<Args...>(c, gid)
         , pmf{std::forward<F>(f)}
         , ptr{std::forward<P>(p)} {}
 
@@ -846,8 +855,8 @@ template <typename Pmf, typename Ptr, typename... Args>
 class slot_pmf_extended final : public slot_base<Args...> {
 public:
     template <typename F, typename P>
-    constexpr slot_pmf_extended(cleanable &c, F && f, P && p)
-        : slot_base<Args...>(c)
+    constexpr slot_pmf_extended(cleanable &c, F && f, P && p, group_id gid)
+        : slot_base<Args...>(c, gid)
         , pmf{std::forward<F>(f)}
         , ptr{std::forward<P>(p)} {}
 
@@ -885,8 +894,8 @@ template <typename Func, typename WeakPtr, typename... Args>
 class slot_tracked final : public slot_base<Args...> {
 public:
     template <typename F, typename P>
-    constexpr slot_tracked(cleanable &c, F && f, P && p)
-        : slot_base<Args...>(c)
+    constexpr slot_tracked(cleanable &c, F && f, P && p, group_id gid)
+        : slot_base<Args...>(c, gid)
         , func{std::forward<F>(f)}
         , ptr{std::forward<P>(p)}
     {}
@@ -935,8 +944,8 @@ template <typename Pmf, typename WeakPtr, typename... Args>
 class slot_pmf_tracked final : public slot_base<Args...> {
 public:
     template <typename F, typename P>
-    constexpr slot_pmf_tracked(cleanable &c, F && f, P && p)
-        : slot_base<Args...>(c)
+    constexpr slot_pmf_tracked(cleanable &c, F && f, P && p, group_id gid)
+        : slot_base<Args...>(c, gid)
         , pmf{std::forward<F>(f)}
         , ptr{std::forward<P>(p)}
     {}
@@ -1019,11 +1028,6 @@ class signal_base final : public detail::cleanable {
     using group_type = std::vector<slot_ptr>;
     using list_type = std::vector<group_type>;
 
-    inline cow_copy_type<list_type, Lockable> slots_copy() {
-        lock_type lock(m_mutex);
-        return m_slots;
-    }
-
 public:
     using arg_list = trait::typelist<T...>;
     using ext_arg_list = trait::typelist<connection&, T...>;
@@ -1040,7 +1044,8 @@ public:
         : m_block{o.m_block.load()}
     {
         lock_type lock(o.m_mutex);
-        std::swap(m_slots, o.m_slots);
+        using std::swap;
+        swap(m_slots, o.m_slots);
     }
 
     signal_base & operator=(signal_base && o) /* not noexcept */ {
@@ -1048,7 +1053,8 @@ public:
         lock_type lock2(o.m_mutex, std::defer_lock);
         std::lock(lock1, lock2);
 
-        std::swap(m_slots, o.m_slots);
+        using std::swap;
+        swap(m_slots, o.m_slots);
         m_block.store(o.m_block.exchange(m_block.load()));
         return *this;
     }
@@ -1071,10 +1077,11 @@ public:
             return;
         }
 
-        // copy slots to execute them out of the lock
-        cow_copy_type<list_type, Lockable> copy = slots_copy();
+        // Reference to the slots to execute them out of the lock
+        // a copy may occur if another thread writes to it.
+        cow_copy_type<list_type, Lockable> ref = slots_reference();
 
-        for (const auto &group : detail::cow_read(copy)) {
+        for (const auto &group : detail::cow_read(ref)) {
             for (const auto &s : group) {
                 s->operator()(a...);
             }
@@ -1089,16 +1096,16 @@ public:
      * Safety: Thread-safety depends on locking policy.
      *
      * @param c a callable
-     * @param group an identifier that can be used to order slot execution
+     * @param gid an identifier that can be used to order slot execution
      * @return a connection object that can be used to interact with the slot
      */
     template <typename Callable>
     std::enable_if_t<trait::is_callable_v<arg_list, Callable>, connection>
-    connect(Callable && c, std::uint32_t group = 0) {
+    connect(Callable && c, group_id gid = 0) {
         using slot_t = detail::slot<Callable, T...>;
-        auto s = detail::make_shared<slot_base, slot_t>(*this, std::forward<Callable>(c));
+        auto s = make_slot<slot_t>(std::forward<Callable>(c), gid);
         connection conn(s);
-        add_slot(std::move(s), group);
+        add_slot(std::move(s));
         return conn;
     }
 
@@ -1109,17 +1116,17 @@ public:
      * the callable to manage it's own connection through this argument.
      *
      * @param c a callable
-     * @param group an identifier that can be used to order slot execution
+     * @param gid an identifier that can be used to order slot execution
      * @return a connection object that can be used to interact with the slot
      */
     template <typename Callable>
     std::enable_if_t<trait::is_callable_v<ext_arg_list, Callable>, connection>
-    connect_extended(Callable && c, std::uint32_t group = 0) {
+    connect_extended(Callable && c, group_id gid = 0) {
         using slot_t = detail::slot_extended<Callable, T...>;
-        auto s = detail::make_shared<slot_base, slot_t>(*this, std::forward<Callable>(c));
+        auto s = make_slot<slot_t>(std::forward<Callable>(c), gid);
         connection conn(s);
         std::static_pointer_cast<slot_t>(s)->conn = conn;
-        add_slot(std::move(s), group);
+        add_slot(std::move(s));
         return conn;
     }
 
@@ -1128,17 +1135,17 @@ public:
      *
      * @param pmf a pointer over member function
      * @param ptr an object pointer
-     * @param group an identifier that can be used to order slot execution
+     * @param gid an identifier that can be used to order slot execution
      * @return a connection object that can be used to interact with the slot
      */
     template <typename Pmf, typename Ptr>
     std::enable_if_t<trait::is_callable_v<arg_list, Pmf, Ptr> &&
                      !trait::is_weak_ptr_compatible_v<Ptr>, connection>
-    connect(Pmf && pmf, Ptr && ptr, std::uint32_t group = 0) {
+    connect(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
         using slot_t = detail::slot_pmf<Pmf, Ptr, T...>;
-        slot_ptr s = detail::make_shared<slot_base, slot_t>(*this, std::forward<Pmf>(pmf), std::forward<Ptr>(ptr));
+        auto s = make_slot<slot_t>(std::forward<Pmf>(pmf), std::forward<Ptr>(ptr), gid);
         connection conn(s);
-        add_slot(std::move(s), group);
+        add_slot(std::move(s));
         return conn;
     }
 
@@ -1147,18 +1154,18 @@ public:
      *
      * @param pmf a pointer over member function
      * @param ptr an object pointer
-     * @param group an identifier that can be used to order slot execution
+     * @param gid an identifier that can be used to order slot execution
      * @return a connection object that can be used to interact with the slot
      */
     template <typename Pmf, typename Ptr>
     std::enable_if_t<trait::is_callable_v<ext_arg_list, Pmf, Ptr> &&
                      !trait::is_weak_ptr_compatible_v<Ptr>, connection>
-    connect_extended(Pmf && pmf, Ptr && ptr, std::uint32_t group = 0) {
+    connect_extended(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
         using slot_t = detail::slot_pmf_extended<Pmf, Ptr, T...>;
-        auto s = detail::make_shared<slot_base, slot_t>(*this, std::forward<Pmf>(pmf), std::forward<Ptr>(ptr));
+        auto s = make_slot<slot_t>(std::forward<Pmf>(pmf), std::forward<Ptr>(ptr), gid);
         connection conn(s);
         std::static_pointer_cast<slot_t>(s)->conn = conn;
-        add_slot(std::move(s), group);
+        add_slot(std::move(s));
         return conn;
     }
 
@@ -1176,19 +1183,19 @@ public:
      *
      * @param pmf a pointer over member function
      * @param ptr a trackable object pointer
-     * @param group an identifier that can be used to order slot execution
+     * @param gid an identifier that can be used to order slot execution
      * @return a connection object that can be used to interact with the slot
      */
     template <typename Pmf, typename Ptr>
     std::enable_if_t<!trait::is_callable_v<arg_list, Pmf> &&
                      trait::is_weak_ptr_compatible_v<Ptr>, connection>
-    connect(Pmf && pmf, Ptr && ptr, std::uint32_t group = 0) {
+    connect(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
         using trait::to_weak;
         auto w = to_weak(std::forward<Ptr>(ptr));
         using slot_t = detail::slot_pmf_tracked<Pmf, decltype(w), T...>;
-        auto s = detail::make_shared<slot_base, slot_t>(*this, std::forward<Pmf>(pmf), w);
+        auto s = make_slot<slot_t>(std::forward<Pmf>(pmf), w, gid);
         connection conn(s);
-        add_slot(std::move(s), group);
+        add_slot(std::move(s));
         return conn;
     }
 
@@ -1206,19 +1213,19 @@ public:
      *
      * @param c a callable
      * @param ptr a trackable object pointer
-     * @param group an identifier that can be used to order slot execution
+     * @param gid an identifier that can be used to order slot execution
      * @return a connection object that can be used to interact with the slot
      */
     template <typename Callable, typename Trackable>
     std::enable_if_t<trait::is_callable_v<arg_list, Callable> &&
                      trait::is_weak_ptr_compatible_v<Trackable>, connection>
-    connect(Callable && c, Trackable && ptr, std::uint32_t group = 0) {
+    connect(Callable && c, Trackable && ptr, group_id gid = 0) {
         using trait::to_weak;
         auto w = to_weak(std::forward<Trackable>(ptr));
         using slot_t = detail::slot_tracked<Callable, decltype(w), T...>;
-        auto s = detail::make_shared<slot_base, slot_t>(*this, std::forward<Callable>(c), w);
+        auto s = make_slot<slot_t>(std::forward<Callable>(c), w, gid);
         connection conn(s);
-        add_slot(std::move(s), group);
+        add_slot(std::move(s));
         return conn;
     }
 
@@ -1251,26 +1258,9 @@ public:
                       trait::is_pmf_v<Callable>) &&
                      detail::function_traits<Callable>::is_disconnectable, size_t>
     disconnect(const Callable &c) {
-        lock_type lock(m_mutex);
-        auto &groups = detail::cow_write(m_slots);
-
-        size_t count = 0;
-
-        for (auto &group : groups) {
-            size_t i = 0;
-            while (i < group.size()) {
-                // full_callable because we need to ascertain the sue of the
-                // right callable type in the absence of an object.
-                if (group[i]->has_full_callable(c)) {
-                    remove_slot(group, i);
-                    ++count;
-                } else {
-                    ++i;
-                }
-            }
-        }
-
-        return count;
+        return disconnect_if([&] (const auto &s) {
+            return s->has_full_callable(c);
+        });
     }
 
     /**
@@ -1290,24 +1280,9 @@ public:
                      !trait::is_callable_v<ext_arg_list, Obj> &&
                      !trait::is_pmf_v<Obj>, size_t>
     disconnect(const Obj &obj) {
-        lock_type lock(m_mutex);
-        auto &groups = detail::cow_write(m_slots);
-
-        size_t count = 0;
-
-        for (auto &group : groups) {
-            size_t i = 0;
-            while (i < group.size()) {
-                if (group[i]->has_object(obj)) {
-                    remove_slot(group, i);
-                    ++count;
-                } else {
-                    ++i;
-                }
-            }
-        }
-
-        return count;
+        return disconnect_if([&] (const auto &s) {
+            return s->has_object(obj);
+        });
     }
 
     /**
@@ -1325,24 +1300,9 @@ public:
      */
     template <typename Callable, typename Obj>
     size_t disconnect(const Callable &c, const Obj &obj) {
-        lock_type lock(m_mutex);
-        auto &groups = detail::cow_write(m_slots);
-
-        size_t count = 0;
-
-        for (auto &group : groups) {
-            size_t i = 0;
-            while (i < group.size()) {
-                if (group[i]->has_object(obj) && group[i]->has_callable(c)) {
-                    remove_slot(group, i);
-                    ++count;
-                } else {
-                    ++i;
-                }
-            }
-        }
-
-        return count;
+        return disconnect_if([&] (const auto &s) {
+            return s->has_object(obj) && s->has_callable(c);
+        });
     }
 
     /**
@@ -1382,10 +1342,10 @@ public:
      * Safety: thread safe
      */
     size_t slot_count() noexcept {
-        cow_copy_type<list_type, Lockable> copy = slots_copy();
+        cow_copy_type<list_type, Lockable> ref = slots_reference();
         size_t count = 0;
-        for (const auto &group : detail::cow_read(copy)) {
-            count += group.size();
+        for (const auto &g : detail::cow_read(ref)) {
+            count += g.size();
         }
         return count;
     }
@@ -1396,41 +1356,70 @@ protected:
      */
     void clean(detail::slot_state *state) override {
         lock_type lock(m_mutex);
-        const auto gid = state->group();
         const auto idx = state->index();
-
         auto &groups = detail::cow_write(m_slots);
-        assert(!groups.empty());
-        assert(gid < groups.size());
-
-        auto &group = groups[gid];
-        assert(idx < group.size());
-        assert(group[idx].get() == state);
-
-        remove_slot(group, idx);
+        auto &slts = groups[state->group()];
+        if (idx < slts.size() && slts[idx] && slts[idx].get() == state) {
+            std::swap(slts[idx], slts.back());
+            slts[idx]->index() = idx;
+            slts.pop_back();
+        }
     }
 
 private:
-    void add_slot(slot_ptr &&s, std::uint32_t group = 0) {
+    // used to get a reference to the slots for reading
+    inline cow_copy_type<list_type, Lockable> slots_reference() {
         lock_type lock(m_mutex);
-        auto &ss = detail::cow_write(m_slots);
-        if (ss.size() <= group) {
-            ss.resize(group + 1);
+        return m_slots;
+    }
+
+    // create a new slot
+    template <typename Slot, typename... A>
+    inline auto make_slot(A && ...a) {
+        return detail::make_shared<slot_base, Slot>(*this, std::forward<A>(a)...);
+    }
+
+    // add the slot to the list of slots
+    void add_slot(slot_ptr &&s) {
+        const group_id gid = s->group();
+
+        lock_type lock(m_mutex);
+        auto &groups = detail::cow_write(m_slots);
+
+        if (static_cast<group_id>(groups.size()) <= gid) {
+            groups.resize(gid + 1);
         }
 
-        s->group() = group;
-        s->index() = static_cast<std::uint32_t>(ss[group].size());
-        ss[group].push_back(std::move(s));
+        s->index() = groups[gid].size();
+        groups[gid].push_back(std::move(s));
     }
 
-    // to be called under lock
-    void remove_slot(group_type &group, std::size_t idx) {
-        std::swap(group[idx], group.back());
-        group[idx]->index() = static_cast<std::uint32_t>(idx);
-        group.pop_back();
+    // disconnect a slot if a condition occurs
+    template <typename Cond>
+    size_t disconnect_if(Cond && cond) {
+        lock_type lock(m_mutex);
+        auto &groups = detail::cow_write(m_slots);
+
+        size_t count = 0;
+
+        for (auto &group : groups) {
+            size_t i = 0;
+            while (i < group.size()) {
+                if (cond(group[i])) {
+                    std::swap(group[i], group.back());
+                    group[i]->index() = i;
+                    group.pop_back();
+                    ++count;
+                } else {
+                    ++i;
+                }
+            }
+        }
+
+        return count;
     }
 
-    // to be called under lock
+    // to be called under lock: remove all the slots
     void clear() {
         detail::cow_write(m_slots).clear();
     }
