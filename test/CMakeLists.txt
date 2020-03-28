@@ -5,7 +5,7 @@ add_custom_target(tests
     COMMENT "Build and run all the unit tests.")
 
 macro(pal_create_test target ut)
-    add_executable(${target} "${ut}")
+    add_executable(${target} EXCLUDE_FROM_ALL "${ut}")
     add_test(${target} ${target})
     add_dependencies(tests ${target})
     sigslot_set_properties(${target} PRIVATE)
