@@ -2,6 +2,7 @@
 #include <sigslot/signal.hpp>
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <random>
 
 using res_container = std::vector<sigslot::group_id>;
