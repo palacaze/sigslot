@@ -1,7 +1,6 @@
 #include <sigslot/signal.hpp>
-#include <functional>
 #include <iostream>
-#include <vector>
+#include <limits>
 
 static auto printer(std::string pos) {
     return [pos=std::move(pos)] (std::string s, int i) {
@@ -13,6 +12,7 @@ int main() {
     sigslot::signal<std::string, int> sig;
 
     sig.connect(printer("Second"), 1);
+    sig.connect(printer("Last"), std::numeric_limits<sigslot::group_id>::max());
     sig.connect(printer("Third"), 2);
     sig.connect(printer("First"), 0);
     sig("bar", 1);

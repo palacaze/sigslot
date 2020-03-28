@@ -2,7 +2,7 @@
 #include <cassert>
 #include <sigslot/signal.hpp>
 
-static constexpr int64_t grps = 30;
+static constexpr sigslot::group_id grps = 30;
 static constexpr int64_t slts = 3;
 static constexpr int64_t emissions = 10000;
 static constexpr int64_t runs = 1000;
@@ -13,7 +13,7 @@ static void test_groups(int64_t &i) {
     sigslot::signal<int64_t&> sig;
 
     for (int64_t s = 0; s < slts; ++s) {
-        for (int64_t g = 0; g < grps; ++g) {
+        for (sigslot::group_id g = 0; g < grps; ++g) {
             sig.connect(fun, grps-g);
         }
     }

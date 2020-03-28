@@ -439,7 +439,7 @@ Support for slot disconnection by supplying an appropriate function signature,
 object pointer or tracker has been introduced in version 1.2.0.
 
 One can disconnect any number of slots using the `signal::disconnect()` method,
-which proposes 3 overloads to specify the disconnection criterion:
+which proposes 4 overloads to specify the disconnection criterion:
 
 - The first takes a reference to a callable. Any kind of callable can be passed,
   even pointers to member functions, function objects and lambdas,
@@ -447,6 +447,7 @@ which proposes 3 overloads to specify the disconnection criterion:
   function, or a tracking object,
 - The third overload takes both kinds of arguments at the same time and can be
   used to pinpoint a specific pair of object + callable.
+- The last overload takes a group id and disconnects all the slots in this group.
 
 Disconnection of lambdas is only possible for lambdas bound to a variable, due
 to their uniqueness.
@@ -528,21 +529,21 @@ relative order of invocation of slots.
 
 The order of invocation of slots in a same group is unspecified and should not be
 relied upon, however slot groups are invoked in ascending group id order.
-When the group id of a slot is not set, it is assigned to the group 0. It is
-recommended to use small id numbers, as the groups are stored in a vector at the
-given id index.
+When the group id of a slot is not set, it is assigned to the group 0.
+Group ids can have any value in the range of signed 32 bit integers.
 
 ```cpp
 #include <sigslot/signal.hpp>
 #include <cstdio>
+#include <limits>
 
 int main() {
     sigslot::signal<> sig;
 
     // simply assigning a group id as last argument to connect
     sig.connect([] { std::puts("Second"); }, 1);
-    sig.connect([] { std::puts("Third"); }, 2);
-    sig.connect([] { std::puts("First"); }, 0);
+    sig.connect([] { std::puts("Last"); }, std::numeric_limits<sigslot::group_id>::max());
+    sig.connect([] { std::puts("First"); }, -10);
     sig();
 
     return 0;

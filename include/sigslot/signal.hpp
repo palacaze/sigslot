@@ -126,6 +126,9 @@ constexpr bool is_pmf_v = std::is_member_function_pointer<T>::value;
 template <typename, typename...>
 class signal_base;
 
+/**
+ * A group_id is used to identify a group of slots
+ */
 using group_id = std::int32_t;
 
 namespace detail {
@@ -454,8 +457,8 @@ inline std::shared_ptr<B> make_shared(Arg && ... arg) {
 class slot_state {
 public:
     constexpr slot_state(group_id gid) noexcept
-        : m_group(gid)
-        , m_index(0)
+        : m_index(0)
+        , m_group(gid)
         , m_connected(true)
         , m_blocked(false)
     {}
@@ -495,8 +498,8 @@ private:
     template <typename, typename...>
     friend class ::sigslot::signal_base;
 
+    std::size_t m_index;     // index into the array of slot pointers inside the signal
     const group_id m_group;  // slot group this slot belongs to
-    std::uint32_t m_index;   // index into the array of slot pointers inside the signal
     std::atomic<bool> m_connected;
     std::atomic<bool> m_blocked;
 };
@@ -1002,9 +1005,8 @@ private:
  * Slot execution order can be constrained by assigning group ids to the slots.
  * The execution order of slots in a same group is unspecified and should not be
  * relied upon, however groups are executed in ascending group ids order. When
- * the group id of a slot is not set, it is assigned to the group 0.
- * It is recommended to use small id numbers, as the groups are stored in a
- * vector a the given id index.
+ * the group id of a slot is not set, it is assigned to the group 0. Group ids
+ * can have any value in the range of signed 32 bit integers.
  *
  * @tparam Lockable a lock type to decide the lock policy
  * @tparam T... the argument types of the emitting and slots functions.
@@ -1025,8 +1027,9 @@ class signal_base final : public detail::cleanable {
     using lock_type = std::unique_lock<Lockable>;
     using slot_base = detail::slot_base<T...>;
     using slot_ptr = detail::slot_ptr<T...>;
-    using group_type = std::vector<slot_ptr>;
-    using list_type = std::vector<group_type>;
+    using slots_type = std::vector<slot_ptr>;
+    struct group_type { slots_type slts; group_id gid; };
+    using list_type = std::vector<group_type>;  // kept ordered by ascending gid
 
 public:
     using arg_list = trait::typelist<T...>;
@@ -1082,7 +1085,7 @@ public:
         cow_copy_type<list_type, Lockable> ref = slots_reference();
 
         for (const auto &group : detail::cow_read(ref)) {
-            for (const auto &s : group) {
+            for (const auto &s : group.slts) {
                 s->operator()(a...);
             }
         }
@@ -1306,6 +1309,27 @@ public:
     }
 
     /**
+     * Disconnect slots in a particular group
+     *
+     * Effect: Disconnects all the slots in the group id in argument.
+     * Safety: Thread-safety depends on locking policy.
+     *
+     * @param gid a group id
+     * @return the number of disconnected slots
+     */
+    size_t disconnect(group_id gid) {
+        lock_type lock(m_mutex);
+        for (auto &group : detail::cow_write(m_slots)) {
+            if (group.gid == gid) {
+                size_t count = group.slts.size();
+                group.slts.clear();
+                return count;
+            }
+        }
+        return 0;
+    }
+
+    /**
      * Disconnects all the slots
      * Safety: Thread safety depends on locking policy
      */
@@ -1345,7 +1369,7 @@ public:
         cow_copy_type<list_type, Lockable> ref = slots_reference();
         size_t count = 0;
         for (const auto &g : detail::cow_read(ref)) {
-            count += g.size();
+            count += g.slts.size();
         }
         return count;
     }
@@ -1357,12 +1381,22 @@ protected:
     void clean(detail::slot_state *state) override {
         lock_type lock(m_mutex);
         const auto idx = state->index();
-        auto &groups = detail::cow_write(m_slots);
-        auto &slts = groups[state->group()];
-        if (idx < slts.size() && slts[idx] && slts[idx].get() == state) {
-            std::swap(slts[idx], slts.back());
-            slts[idx]->index() = idx;
-            slts.pop_back();
+        const auto gid = state->group();
+
+        // find the group
+        for (auto &group : detail::cow_write(m_slots)) {
+            if (group.gid == gid) {
+                auto &slts = group.slts;
+
+                // ensure we have the right slot, in case of concurrent cleaning
+                if (idx < slts.size() && slts[idx] && slts[idx].get() == state) {
+                    std::swap(slts[idx], slts.back());
+                    slts[idx]->index() = idx;
+                    slts.pop_back();
+                }
+
+                return;
+            }
         }
     }
 
@@ -1379,19 +1413,27 @@ private:
         return detail::make_shared<slot_base, Slot>(*this, std::forward<A>(a)...);
     }
 
-    // add the slot to the list of slots
+    // add the slot to the list of slots of the right group
     void add_slot(slot_ptr &&s) {
         const group_id gid = s->group();
 
         lock_type lock(m_mutex);
         auto &groups = detail::cow_write(m_slots);
 
-        if (static_cast<group_id>(groups.size()) <= gid) {
-            groups.resize(gid + 1);
+        // find the group
+        auto it = groups.begin();
+        while (it != groups.end() && it->gid < gid) {
+            it++;
         }
 
-        s->index() = groups[gid].size();
-        groups[gid].push_back(std::move(s));
+        // create a new group if necessary
+        if (it == groups.end() || it->gid != gid) {
+            it = groups.insert(it, {{}, gid});
+        }
+
+        // add the slot
+        s->index() = it->slts.size();
+        it->slts.push_back(std::move(s));
     }
 
     // disconnect a slot if a condition occurs
@@ -1403,12 +1445,13 @@ private:
         size_t count = 0;
 
         for (auto &group : groups) {
+            auto &slts = group.slts;
             size_t i = 0;
-            while (i < group.size()) {
-                if (cond(group[i])) {
-                    std::swap(group[i], group.back());
-                    group[i]->index() = i;
-                    group.pop_back();
+            while (i < slts.size()) {
+                if (cond(slts[i])) {
+                    std::swap(slts[i], slts.back());
+                    slts[i]->index() = i;
+                    slts.pop_back();
                     ++count;
                 } else {
                     ++i;
