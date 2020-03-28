@@ -25,12 +25,17 @@ no use for them. If I can be convinced of otherwise I may change my mind later o
 
 No compilation or installation is required, just include `sigslot/signal.hpp`
 and use it. Sigslot currently depends on a C++14 compliant compiler, but if need
-arises it may be retrofitted to C++11. It is known to work with Clang 4.0 and Gcc
+arises it may be retrofitted to C++11. It is known to work with Clang 4.0 and GCC
 5.0+ compilers on GNU Linux, and MSVC, Clang-cl and MinGW on Windows.
 
+However, be aware of a potential gotcha on Windows with MSVC and Clang-Cl compilers,
+which may need the `/OPT:NOICF` linker flags in exceptional situations. Read The
+Implementation Details chapter for an explanation.
+
 A CMake list file is supplied for installation purpose and generating a CMake
-import module. It is also required for examples and tests, which optionally
-depend on Qt5 and Boost for adapters unit tests.
+import module. This is the preferred installation method. The `Pal::Sigslot` is
+available and already applies the needed linker flags. It is also required for
+examples and tests, which optionally depend on Qt5 and Boost for adapters unit tests.
 
 A configuration option `SIGSLOT_REDUCE_COMPILE_TIME` is available at configuration
 time. When activated, it attempts to reduce code bloat by avoiding heavy template
@@ -566,3 +571,70 @@ Sigslot offers 2 typedefs,
   safe. It is also safe with recursive signal emission.
 - `sigslot::signal_st` is a non thread-safe alternative, it trades safety for slightly
   faster operation.
+
+
+## Implementation details
+
+### Using function pointers to disconnect slots
+
+Comparing function pointers is a nightmare in C++. Here is a table demonstrating
+the size and address of a variety of cases as a showcase:
+
+```cpp
+void fun() {}
+
+struct b1 {
+    virtual ~b1() = default;
+    static void sm() {}
+    void m() {}
+    virtual void vm() {}
+};
+
+struct b2 {
+    virtual ~b2() = default;
+    static void sm() {}
+    void m() {}
+    virtual void vm() {}
+};
+
+struct c {
+    virtual ~c() = default;
+    virtual void w() {}
+};
+
+struct d : b1 {
+    static void sm() {}
+    void m() {}
+    void vm() override {}
+};
+
+struct e : b1, c {
+    static void sm() {}
+    void m() {}
+    void vm() override{}
+};
+```
+
+| Symbol  | GCC 9 Linux 64<br>Sizeof | GCC 9 Linux 64<br>Address | MSVC 16.6 32<br>Sizeof | MSVC 16.6 32<br>Address | GCC 8 Mingw 32<br>Sizeof | GCC 8 Mingw 32<br>Address | Clang-cl 9 32<br>Sizeof | Clang-cl 9 32<br>Address |
+|---------|--------------------------|---------------------------|------------------------|-------------------------|--------------------------|---------------------------|-------------------------|--------------------------|
+| fun     | 8                        | 0x802340                  | 4                      | 0x1311A6                | 4                        | 0xF41540                  | 4                       | 0x0010AE                 |
+| &b1::sm | 8                        | 0xE03140                  | 4                      | 0x7612A5                | 4                        | 0x308D40                  | 4                       | 0x0010AE                 |
+| &b1::m  | 16                       | 0xF03240                  | 4                      | 0x1514A5                | 8                        | 0x248D40                  | 4                       | 0x0010AE                 |
+| &b1::vm | 16                       | 0x11                      | 4                      | 0x9F11A5                | 8                        | 0x09                      | 4                       | 0x8023AE                 |
+| &b2::sm | 8                        | 0x003340                  | 4                      | 0xA515A5                | 4                        | 0x408D40                  | 4                       | 0x0010AE                 |
+| &b2::m  | 16                       | 0x103440                  | 4                      | 0xEB10A5                | 8                        | 0x348D40                  | 4                       | 0x0010AE                 |
+| &b2::vm | 16                       | 0x11                      | 4                      | 0x6A14A5                | 8                        | 0x09                      | 4                       | 0x8023AE                 |
+| &d::sm  | 8                        | 0x203440                  | 4                      | 0x2612A5                | 4                        | 0x108D40                  | 4                       | 0x0010AE                 |
+| &d::m   | 16                       | 0x303540                  | 4                      | 0x9D13A5                | 8                        | 0x048D40                  | 4                       | 0x0010AE                 |
+| &d::vm  | 16                       | 0x11                      | 4                      | 0x4412A5                | 8                        | 0x09                      | 4                       | 0x8023AE                 |
+| &e::sm  | 8                        | 0x403540                  | 4                      | 0xF911A5                | 4                        | 0x208D40                  | 4                       | 0x0010AE                 |
+| &e::m   | 16                       | 0x503640                  | 8                      | 0x8111A5                | 8                        | 0x148D40                  | 8                       | 0x0010AE                 |
+| &e::vm  | 16                       | 0x11                      | 8                      | 0xA911A5                | 8                        | 0x09                      | 8                       | 0x8023AE                 |
+
+MSVC and Clang-cl in Release mode optimize functions with the same definition by
+merging them. This is a behaviour that can be deactivated with the `/OPT:NOICF`
+linker option.
+Sigslot tests and examples rely on a lot a identical callables which trigger this
+behaviour, which is why it deactivates this particular optimization on the affected
+compilers.
+
