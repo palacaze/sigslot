@@ -84,10 +84,20 @@ target_link_libraries(Sigslot_UndefinedSanitizer INTERFACE
     $<$<BOOL:${SIGSLOT_COMPILER_CLANG_OR_GCC}>:-fsanitize=undefined>
 )
 
+# Use Libcxx
+add_library(Sigslot_Libcxx INTERFACE)
+target_compile_options(Sigslot_Libcxx INTERFACE
+    $<$<BOOL:${SIGSLOT_COMPILER_CLANG}>:-stdlib=libc++>
+)
+target_link_libraries(Sigslot_Libcxx INTERFACE
+    $<$<BOOL:${SIGSLOT_COMPILER_CLANG}>:-stdlib=libc++;-rtlib=compiler-rt>
+)
+
 option(SIGSLOT_ENABLE_COMMON_WARNINGS "Enable common compiler flags" ON)
 option(SIGSLOT_ENABLE_MANY_WARNINGS "Enable most compiler flags" OFF)
 option(SIGSLOT_DISABLE_RTTI "Disable Runtime Type Information" OFF)
 option(SIGSLOT_ENABLE_LTO "Enable link time optimization (release only)" OFF)
+option(SIGSLOT_ENABLE_LIBCXX "Use libcxx with clang" OFF)
 option(SIGSLOT_ENABLE_PROFILING "Add compile flags to help with profiling" OFF)
 option(SIGSLOT_SANITIZE_ADDRESS "Compile with address sanitizer support" OFF)
 option(SIGSLOT_SANITIZE_THREADS "Compile with thread sanitizer support" OFF)
@@ -103,6 +113,7 @@ function(sigslot_set_properties target scope)
         $<$<BOOL:${SIGSLOT_ENABLE_COMMON_WARNINGS}>:Sigslot_CommonWarnings>
         $<$<BOOL:${SIGSLOT_ENABLE_MANY_WARNINGS}>:Sigslot_ManyWarnings>
         $<$<BOOL:${SIGSLOT_DISABLE_RTTI}>:Sigslot_NoRTTI>
+        $<$<BOOL:${SIGSLOT_ENABLE_LIBCXX}>:Sigslot_Libcxx>
         $<$<BOOL:${SIGSLOT_ENABLE_PROFILING}>:Sigslot_Profiling>
         $<$<BOOL:${SIGSLOT_SANITIZE_ADDRESS}>:Sigslot_AddressSanitizer>
         $<$<BOOL:${SIGSLOT_SANITIZE_THREADS}>:Sigslot_ThreadSanitizer>
