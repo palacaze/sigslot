@@ -4,6 +4,7 @@
 #include <mutex>
 #include <type_traits>
 #include <utility>
+#include <thread>
 #include <vector>
 
 #if defined __clang__ || (__GNUC__ > 5)
@@ -318,6 +319,43 @@ struct null_mutex {
     inline bool try_lock() noexcept { return true; }
     inline void lock() noexcept {}
     inline void unlock() noexcept {}
+};
+
+/**
+ * A spin mutex that yields, mostly for use in benchmarks and scenarii that invoke
+ * slots at a very high pace.
+ * One should almost always prefer a standard mutex over this.
+ */
+struct spin_mutex {
+    spin_mutex() noexcept = default;
+    ~spin_mutex() noexcept = default;
+    spin_mutex(spin_mutex const&) = delete;
+    spin_mutex& operator=(const spin_mutex &) = delete;
+    spin_mutex(spin_mutex &&) = delete;
+    spin_mutex& operator=(spin_mutex &&) = delete;
+
+    void lock() noexcept {
+        while (true) {
+            while (!state.load(std::memory_order_relaxed)) {
+                std::this_thread::yield();
+            }
+
+            if (try_lock()) {
+                break;
+            }
+        }
+    }
+
+    bool try_lock() noexcept {
+        return state.exchange(false, std::memory_order_acquire);
+    }
+
+    void unlock() noexcept {
+        state.store(true, std::memory_order_release);
+    }
+
+private:
+    std::atomic<bool> state {true};
 };
 
 /**
