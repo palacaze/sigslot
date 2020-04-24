@@ -17,8 +17,6 @@
 #include <typeinfo>
 #endif
 
-#include <iostream>
-
 namespace sigslot {
 
 namespace trait {
