@@ -308,12 +308,12 @@ obj_ptr get_object_ptr(const T &t) {
 
 // noop mutex for thread-unsafe use
 struct null_mutex {
-    null_mutex() = default;
-    ~null_mutex() = default;
+    null_mutex() noexcept = default;
+    ~null_mutex() noexcept = default;
     null_mutex(const null_mutex &) = delete;
-    null_mutex operator=(const null_mutex &) = delete;
+    null_mutex& operator=(const null_mutex &) = delete;
     null_mutex(null_mutex &&) = delete;
-    null_mutex operator=(null_mutex &&) = delete;
+    null_mutex& operator=(null_mutex &&) = delete;
 
     inline bool try_lock() noexcept { return true; }
     inline void lock() noexcept {}
