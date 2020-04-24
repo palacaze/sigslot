@@ -32,10 +32,18 @@ However, be aware of a potential gotcha on Windows with MSVC and Clang-Cl compil
 which may need the `/OPT:NOICF` linker flags in exceptional situations. Read The
 Implementation Details chapter for an explanation.
 
-A CMake list file is supplied for installation purpose and generating a CMake
-import module. This is the preferred installation method. The `Pal::Sigslot` is
-available and already applies the needed linker flags. It is also required for
+A CMake list file is supplied for installation purpose and generating a CMake import
+module. This is the preferred installation method. The `Pal::Sigslot` imported target
+is available and already applies the needed linker flags. It is also required for
 examples and tests, which optionally depend on Qt5 and Boost for adapters unit tests.
+
+```cmake
+# Using Sigslot from cmake
+find_package(PalSigslot)
+
+add_executable(MyExe main.cpp)
+target_link_libraries(MyExe PRIVATE Pal::Sigslot)
+```
 
 A configuration option `SIGSLOT_REDUCE_COMPILE_TIME` is available at configuration
 time. When activated, it attempts to reduce code bloat by avoiding heavy template
