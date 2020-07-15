@@ -26,7 +26,7 @@ no use for them. If I can be convinced of otherwise I may change my mind later o
 No compilation or installation is required, just include `sigslot/signal.hpp`
 and use it. Sigslot currently depends on a C++14 compliant compiler, but if need
 arises it may be retrofitted to C++11. It is known to work with Clang 4.0 and GCC
-5.0+ compilers on GNU Linux, and MSVC, Clang-cl and MinGW on Windows.
+5.0+ compilers on GNU Linux, MSVC 2017 and up, Clang-cl and MinGW on Windows.
 
 However, be aware of a potential gotcha on Windows with MSVC and Clang-Cl compilers,
 which may need the `/OPT:NOICF` linker flags in exceptional situations. Read The
