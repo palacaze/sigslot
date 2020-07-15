@@ -10,6 +10,7 @@ macro(pal_create_test target ut)
     add_dependencies(tests ${target})
     sigslot_set_properties(${target} PRIVATE)
     target_link_libraries(${target} PRIVATE Pal::Sigslot)
+    target_compile_definitions(${target} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:_SCL_SECURE_NO_WARNINGS>)
 endmacro()
 
 file(GLOB_RECURSE UNIT_TESTS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*.cpp")
