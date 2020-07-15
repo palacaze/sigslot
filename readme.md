@@ -646,3 +646,7 @@ Sigslot tests and examples rely on a lot a identical callables which trigger thi
 behaviour, which is why it deactivates this particular optimization on the affected
 compilers.
 
+### Known bugs
+
+Using generic lambdas with GCC less than version 7.4 can trigger [Bug #68071](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=68071).
+
