@@ -15,7 +15,6 @@ struct o {
 int main() {
     s d;
     auto lambda = []() { std::cout << "lambda\n"; };
-    auto gen_lambda = [](auto && ... /*a*/) { std::cout << "generic lambda\n"; };
 
     // declare a signal instance with no arguments
     sigslot::signal<> sig;
@@ -27,7 +26,15 @@ int main() {
     sig.connect(&s::sm);
     sig.connect(o());
     sig.connect(lambda);
+
+    // Avoid hitting bug https://gcc.gnu.org/bugzilla/show_bug.cgi?id=68071
+    // on old GCC compilers
+#ifndef __clang__
+#if GCC_VERSION > 70300
+    auto gen_lambda = [](auto && ... /*a*/) { std::cout << "generic lambda\n"; };
     sig.connect(gen_lambda);
+#endif
+#endif
 
     // emit a signal
     sig();
