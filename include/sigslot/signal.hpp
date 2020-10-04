@@ -798,6 +798,29 @@ template <typename... T>
 using slot_ptr = std::shared_ptr<slot_base<T...>>;
 
 
+template <typename T>
+struct maybe_mover {
+    template <typename U>
+    static std::remove_reference_t<T>&& apply(U && u) noexcept {
+        return static_cast<std::remove_reference_t<T>&&>(std::forward<U>(u));
+    }
+};
+
+template <typename T>
+struct maybe_mover<T&> {
+    template <typename U>
+    static T& apply(U && u) noexcept {
+        return static_cast<std::remove_reference_t<T>&>(std::forward<U>(u));
+    }
+};
+
+// Conditional move depending on the value type being a reference or not
+template <typename T, typename U>
+decltype(auto) maybe_move(U && u) {
+    return maybe_mover<T>::apply(std::forward<U>(u));
+}
+
+
 /* A base class for slot objects. This base type only depends on slot argument
  * types, it will be used as an element in an intrusive singly-linked list of
  * slots, hence the public next member.
@@ -901,7 +924,7 @@ public:
 
 protected:
     void call_slot(Args ...args) override {
-        func(args...);
+        func(maybe_move<Args>(args)...);
     }
 
     func_ptr get_callable() const noexcept override {
@@ -933,7 +956,7 @@ public:
 
 protected:
     void call_slot(Args ...args) override {
-        func(conn, args...);
+        func(conn, maybe_move<Args>(args)...);
     }
 
     func_ptr get_callable() const noexcept override {
@@ -966,7 +989,7 @@ public:
 
 protected:
     void call_slot(Args ...args) override {
-        ((*ptr).*pmf)(args...);
+        ((*ptr).*pmf)(maybe_move<Args>(args)...);
     }
 
     func_ptr get_callable() const noexcept override {
@@ -1004,7 +1027,7 @@ public:
 
 protected:
     void call_slot(Args ...args) override {
-        ((*ptr).*pmf)(conn, args...);
+        ((*ptr).*pmf)(conn, maybe_move<Args>(args)...);
     }
 
     func_ptr get_callable() const noexcept override {
@@ -1052,7 +1075,7 @@ protected:
             return;
         }
         if (slot_state::connected()) {
-            func(args...);
+            func(maybe_move<Args>(args)...);
         }
     }
 
@@ -1102,7 +1125,7 @@ protected:
             return;
         }
         if (slot_state::connected()) {
-            ((*sp).*pmf)(args...);
+            ((*sp).*pmf)(maybe_move<Args>(args)...);
         }
     }
 
@@ -1221,9 +1244,20 @@ public:
         // a copy may occur if another thread writes to it.
         cow_copy_type<list_type, Lockable> ref = slots_reference();
 
+        size_t count = 0;
+        for (const auto &g : detail::cow_read(ref)) {
+            count += g.slts.size();
+        }
+
+        size_t idx = 0;
         for (const auto &group : detail::cow_read(ref)) {
             for (const auto &s : group.slts) {
-                s->operator()(a...);
+                idx++;
+                if (idx == count) {
+                    s->operator()(std::forward<U>(a)...);
+                } else {
+                    s->operator()(a...);
+                }
             }
         }
     }
