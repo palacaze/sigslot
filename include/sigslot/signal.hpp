@@ -20,6 +20,8 @@
 
 namespace sigslot {
 
+class observer;
+
 namespace trait {
 
 /// represent a list of types
@@ -119,6 +121,9 @@ constexpr bool is_func_v = std::is_function<T>::value;
 
 template <typename T>
 constexpr bool is_pmf_v = std::is_member_function_pointer<T>::value;
+
+template <typename T>
+constexpr bool is_observer_v = std::is_base_of<::sigslot::observer, T>::value;
 
 } // namespace trait
 
@@ -680,6 +685,20 @@ private:
     {}
 };
 
+/**
+ * Observer for automatic slot lifetime tracking. Derive classes which
+ * act as slot from this and they will automatically disconnect from
+ * signals when the instance is deleted.
+ */
+class observer {
+    template <typename Lockable, typename... T> friend class signal_base;
+
+public:
+    virtual ~observer() = default;
+
+private:
+    std::vector<scoped_connection> _connections;
+};
 
 namespace detail {
 
@@ -1170,6 +1189,28 @@ public:
     }
 
     /**
+     * Overload of connect for pointers over member functions derived from
+     * observer
+     *
+     * @param pmf a pointer over member function
+     * @param ptr an object pointer derived from observer
+     * @param gid an identifier that can be used to order slot execution
+     * @return a connection object that can be used to interact with the slot
+     */
+    template <typename Pmf, typename Ptr>
+    std::enable_if_t<
+    trait::is_callable_v<arg_list, Pmf, Ptr> &&
+    trait::is_observer_v<std::remove_pointer_t<Ptr>> &&
+    !trait::is_weak_ptr_compatible_v<Ptr>, void>
+    connect(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
+        using slot_t = detail::slot_pmf<Pmf, Ptr, T...>;
+        auto s = make_slot<slot_t>(std::forward<Pmf>(pmf), std::forward<Ptr>(ptr), gid);
+        connection conn(s);
+        add_slot(std::move(s));
+        ptr->_connections.emplace_back(conn);
+    }
+
+    /**
      * Overload of connect for pointers over member functions
      *
      * @param pmf a pointer over member function
@@ -1178,8 +1219,10 @@ public:
      * @return a connection object that can be used to interact with the slot
      */
     template <typename Pmf, typename Ptr>
-    std::enable_if_t<trait::is_callable_v<arg_list, Pmf, Ptr> &&
-                     !trait::is_weak_ptr_compatible_v<Ptr>, connection>
+    std::enable_if_t<
+    trait::is_callable_v<arg_list, Pmf, Ptr> &&
+    !trait::is_observer_v<std::remove_pointer_t<Ptr>> &&
+    !trait::is_weak_ptr_compatible_v<Ptr>, connection>
     connect(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
         using slot_t = detail::slot_pmf<Pmf, Ptr, T...>;
         auto s = make_slot<slot_t>(std::forward<Pmf>(pmf), std::forward<Ptr>(ptr), gid);
