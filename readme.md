@@ -446,6 +446,54 @@ int main() {
 }
 ```
 
+#### Intrusive slot lifetime tracking
+
+Another way of ensuring automatic disconnection of pointer over member functions
+slots is by explicitly inheriting from `sigslot::observer` or `sigslot::observer_st`.
+The former is thread-safe, contrary to the later.
+
+Here is an example usage.
+
+```cpp
+#include <sigslot/signal.hpp>
+
+int sum = 0;
+
+struct s : sigslot::observer_st {
+    void f(int i) { sum += i; }
+};
+
+struct s_mt : sigslot::observer {
+    ~s_mt() {
+        // Needed to ensure proper disconnection prior to object destruction
+        // in multithreaded contexts.
+        this->disconnect_all();
+    }
+    
+    void f(int i) { sum += i; }
+};
+
+int main() {
+    sum = 0;
+    signal<int> sig;
+    
+    {
+        // Lifetime of object instance p is tracked
+        s p;
+        s_mt pm;
+        sig.connect(&s::f, p);
+        sig.connect(&s_mt::f, pm);
+        sig(1);     // sum == 2
+    }
+    
+    // The slots got disconnected at instance destruction
+    sig(1);         // sum == 1
+}
+```
+
+The objects that use this intrusive approach may be connected to any number of
+unrelated signals.
+
 ### Disconnection without a connection object
 
 Support for slot disconnection by supplying an appropriate function signature,

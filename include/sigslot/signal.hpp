@@ -20,6 +20,13 @@
 
 namespace sigslot {
 
+namespace detail {
+
+// Used to detect an object of observer type
+struct observer_type {};
+
+} // namespace detail
+
 namespace trait {
 
 /// represent a list of types
@@ -101,7 +108,7 @@ static constexpr bool with_rtti =
 template <typename P>
 constexpr bool is_weak_ptr_compatible_v = detail::is_weak_ptr_compatible<std::decay_t<P>>::value;
 
-/// determine if a type T (Callable or Pmf) is callable with supplied arguments in L
+/// determine if a type T (Callable or Pmf) is callable with supplied arguments
 template <typename L, typename... T>
 constexpr bool is_callable_v = detail::is_callable<T..., L>::value;
 
@@ -119,6 +126,10 @@ constexpr bool is_func_v = std::is_function<T>::value;
 
 template <typename T>
 constexpr bool is_pmf_v = std::is_member_function_pointer<T>::value;
+
+template <typename T>
+constexpr bool is_observer_v = std::is_base_of<::sigslot::detail::observer_type,
+                                               std::remove_pointer_t<T>>::value;
 
 } // namespace trait
 
@@ -680,6 +691,54 @@ private:
     {}
 };
 
+/**
+ * Observer is a base class for intrusive lifetime tracking of objects.
+ *
+ * This is an alternative to trackable pointers, such as std::shared_ptr,
+ * and manual connection management by keeping connection objects in scope.
+ * Deriving from this class allows automatic disconnection of all the slots
+ * connected to any signal when an instance is destroyed.
+ */
+template <typename Lockable>
+struct observer_base : private detail::observer_type {
+    virtual ~observer_base() = default;
+
+protected:
+    /**
+     * Disconnect all signals connected to this object.
+     *
+     * To avoid invocation of slots on a semi-destructed instance, which may happen
+     * in multi-threaded contexts, derived classes should call this method in their
+     * destructor. This will ensure proper disconnection prior to the destruction.
+     */
+    void disconnect_all() {
+        std::unique_lock<Lockable> _{m_mutex};
+        m_connections.clear();
+    }
+
+private:
+    template <typename, typename ...>
+    friend class signal_base;
+
+    void add_connection(connection conn) {
+        std::unique_lock<Lockable> _{m_mutex};
+        m_connections.emplace_back(std::move(conn));
+    }
+
+    Lockable m_mutex;
+    std::vector<scoped_connection> m_connections;
+};
+
+/**
+ * Specialization of observer_base to be used in single threaded contexts.
+ */
+using observer_st = observer_base<detail::null_mutex>;
+
+/**
+ * Specialization of observer_base to be used in multi-threaded contexts.
+ */
+using observer = observer_base<std::mutex>;
+
 
 namespace detail {
 
@@ -1170,6 +1229,27 @@ public:
     }
 
     /**
+     * Overload of connect for pointers over member functions derived from
+     * observer
+     *
+     * @param pmf a pointer over member function
+     * @param ptr an object pointer derived from observer
+     * @param gid an identifier that can be used to order slot execution
+     * @return a connection object that can be used to interact with the slot
+     */
+    template <typename Pmf, typename Ptr>
+    std::enable_if_t<trait::is_callable_v<arg_list, Pmf, Ptr> &&
+                     trait::is_observer_v<Ptr>, connection>
+    connect(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
+        using slot_t = detail::slot_pmf<Pmf, Ptr, T...>;
+        auto s = make_slot<slot_t>(std::forward<Pmf>(pmf), std::forward<Ptr>(ptr), gid);
+        connection conn(s);
+        add_slot(std::move(s));
+        ptr->add_connection(conn);
+        return conn;
+    }
+
+    /**
      * Overload of connect for pointers over member functions
      *
      * @param pmf a pointer over member function
@@ -1179,6 +1259,7 @@ public:
      */
     template <typename Pmf, typename Ptr>
     std::enable_if_t<trait::is_callable_v<arg_list, Pmf, Ptr> &&
+                     !trait::is_observer_v<Ptr> &&
                      !trait::is_weak_ptr_compatible_v<Ptr>, connection>
     connect(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
         using slot_t = detail::slot_pmf<Pmf, Ptr, T...>;
