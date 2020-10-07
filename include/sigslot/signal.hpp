@@ -717,7 +717,14 @@ private:
     std::vector<scoped_connection> m_connections;
 };
 
+/**
+ * Specialization of observer_base to be used in single threaded contexts.
+ */
 using observer_st = observer_base<detail::null_mutex>;
+
+/**
+ * Specialization of observer_base to be used in multi-threaded contexts.
+ */
 using observer = observer_base<std::mutex>;
 
 namespace detail {
@@ -1241,7 +1248,8 @@ public:
     template <typename Pmf, typename Ptr>
     std::enable_if_t<
     trait::is_callable_v<arg_list, Pmf, Ptr> &&
-    !trait::is_observer_v<Lockable, std::remove_pointer_t<Ptr>> &&
+    !trait::is_observer_v<std::mutex, std::remove_pointer_t<Ptr>> &&
+    !trait::is_observer_v<detail::null_mutex, std::remove_pointer_t<Ptr>> &&
     !trait::is_weak_ptr_compatible_v<Ptr>, connection>
     connect(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
         using slot_t = detail::slot_pmf<Pmf, Ptr, T...>;
