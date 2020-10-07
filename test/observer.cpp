@@ -2,51 +2,38 @@
 #include <sigslot/signal.hpp>
 #include <cassert>
 #include <list>
+#include <memory>
 #include <vector>
 
-struct s : ::sigslot::observer
-{
-    ~s() override
-    {
+struct s : ::sigslot::observer {
+    ~s() override {
         this->disconnect_all();
     }
 
-    void f1 (int &i)
-    {
-        ++i;
-    }
+    void f1 (int &i) { ++i; }
 };
 
-struct s_st : ::sigslot::observer_st
-{
-    void f1 (int &i)
-    {
-        ++i;
-    }
+struct s_st : ::sigslot::observer_st {
+    void f1 (int &i) { ++i; }
 };
 
-struct s_plain
-{
-    void f1 (int &i)
-    {
-        ++i;
-    }
+struct s_plain {
+    void f1 (int &i) { ++i; }
 };
 
 template <typename T, template <typename...> class SIG_T>
-void test_observer()
-{
+void test_observer() {
     SIG_T<int &> sig;
 
     // Automatic disconnect via observer inheritance
     {
-        T p;
-        sig.connect(&T::f1, &p);
+        T p1;
+        sig.connect(&T::f1, &p1);
         assert(sig.slot_count() == 1);
 
         {
-            T p;
-            sig.connect(&T::f1, &p);
+            T p2;
+            sig.connect(&T::f1, &p2);
             assert(sig.slot_count() == 2);
         }
 
@@ -66,32 +53,55 @@ void test_observer()
 }
 
 template <typename T, template <typename...> class SIG_T>
-void test_observer_signals()
-{
+void test_observer_signals() {
     int sum = 0;
     SIG_T<int &> sig;
 
     {
-        T p;
-        sig.connect(&T::f1, &p);
+        T p1;
+        sig.connect(&T::f1, &p1);
         sig(sum);
         assert(sum == 1);
         {
-            T p;
-            sig.connect(&T::f1, &p);
+            T p2;
+            sig.connect(&T::f1, &p2);
             sig(sum);
             assert(sum == 3);
         }
         sig(sum);
         assert(sum == 4);
     }
+
     sig(sum);
     assert(sum == 4);
 }
 
 template <typename T, template <typename...> class SIG_T>
-void test_observer_signals_list()
-{
+void test_observer_signals_shared() {
+    int sum = 0;
+    SIG_T<int &> sig;
+
+    {
+        auto p1 = std::make_shared<T>();
+        sig.connect(&T::f1, p1);
+        sig(sum);
+        assert(sum == 1);
+        {
+            auto p2 = std::make_shared<T>();
+            sig.connect(&T::f1, p2);
+            sig(sum);
+            assert(sum == 3);
+        }
+        sig(sum);
+        assert(sum == 4);
+    }
+
+    sig(sum);
+    assert(sum == 4);
+}
+
+template <typename T, template <typename...> class SIG_T>
+void test_observer_signals_list() {
     int sum = 0;
     SIG_T<int &> sig;
 
@@ -102,18 +112,19 @@ void test_observer_signals_list()
             l.emplace_back();
             sig.connect(&T::f1, &l.back());
         }
+
         assert(sig.slot_count() == 10);
         sig(sum);
         assert(sum == 10);
     }
+
     assert(sig.slot_count() == 0);
     sig(sum);
     assert(sum == 10);
 }
 
 template <typename T, template <typename...> class SIG_T>
-void test_observer_signals_vector()
-{
+void test_observer_signals_vector() {
     int sum = 0;
     SIG_T<int &> sig;
 
@@ -128,6 +139,7 @@ void test_observer_signals_vector()
         sig(sum);
         assert(sum == 10);
     }
+
     assert(sig.slot_count() == 0);
     sig(sum);
     assert(sum == 10);
@@ -135,13 +147,15 @@ void test_observer_signals_vector()
 
 int main()
 {
-    test_observer<s, ::sigslot::signal>();
-    test_observer<s_st, ::sigslot::signal_st>();
-    test_observer_signals<s, ::sigslot::signal>();
-    test_observer_signals<s_st, ::sigslot::signal_st>();
-    test_observer_signals_list<s, ::sigslot::signal>();
-    test_observer_signals_list<s_st, ::sigslot::signal_st>();
-    test_observer_signals_vector<s, ::sigslot::signal>();
-    test_observer_signals_vector<s_st, ::sigslot::signal_st>();
+    test_observer<s, sigslot::signal>();
+    test_observer<s_st, sigslot::signal_st>();
+    test_observer_signals<s, sigslot::signal>();
+    test_observer_signals<s_st, sigslot::signal_st>();
+    test_observer_signals_shared<s, sigslot::signal>();
+    test_observer_signals_shared<s_st, sigslot::signal_st>();
+    test_observer_signals_list<s, sigslot::signal>();
+    test_observer_signals_list<s_st, sigslot::signal_st>();
+    test_observer_signals_vector<s, sigslot::signal>();
+    test_observer_signals_vector<s_st, sigslot::signal_st>();
     return 0;
 }
