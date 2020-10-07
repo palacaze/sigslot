@@ -20,7 +20,8 @@
 
 namespace sigslot {
 
-class observer;
+template <typename Lockable>
+struct observer_base;
 
 namespace trait {
 
@@ -103,7 +104,7 @@ static constexpr bool with_rtti =
 template <typename P>
 constexpr bool is_weak_ptr_compatible_v = detail::is_weak_ptr_compatible<std::decay_t<P>>::value;
 
-/// determine if a type T (Callable or Pmf) is callable with supplied arguments in L
+/// determine if a type T (Callable or Pmf) is callable with supplied arguments
 template <typename L, typename... T>
 constexpr bool is_callable_v = detail::is_callable<T..., L>::value;
 
@@ -122,8 +123,8 @@ constexpr bool is_func_v = std::is_function<T>::value;
 template <typename T>
 constexpr bool is_pmf_v = std::is_member_function_pointer<T>::value;
 
-template <typename T>
-constexpr bool is_observer_v = std::is_base_of<::sigslot::observer, T>::value;
+template <typename Lockable, typename T>
+constexpr bool is_observer_v = std::is_base_of<::sigslot::observer_base<Lockable>, T>::value;
 
 } // namespace trait
 
@@ -690,15 +691,34 @@ private:
  * act as slot from this and they will automatically disconnect from
  * signals when the instance is deleted.
  */
-class observer {
-    template <typename Lockable, typename... T> friend class signal_base;
+template <typename Lockable>
+struct observer_base {
 
-public:
-    virtual ~observer() = default;
+    virtual ~observer_base() = default;
+
+protected:
+
+    void disconnect_all() noexcept {
+        std::unique_lock<Lockable> _{m_mutex};
+        m_connections.clear();
+    }
 
 private:
-    std::vector<scoped_connection> _connections;
+
+    template <typename, typename ...>
+    friend class signal_base;
+
+    void add_connection(connection &&conn) {
+        std::unique_lock<Lockable> _{m_mutex};
+        m_connections.emplace_back(conn);
+    }
+
+    Lockable m_mutex;
+    std::vector<scoped_connection> m_connections;
 };
+
+using observer_st = observer_base<detail::null_mutex>;
+using observer = observer_base<std::mutex>;
 
 namespace detail {
 
@@ -1200,14 +1220,14 @@ public:
     template <typename Pmf, typename Ptr>
     std::enable_if_t<
     trait::is_callable_v<arg_list, Pmf, Ptr> &&
-    trait::is_observer_v<std::remove_pointer_t<Ptr>> &&
+    trait::is_observer_v<Lockable, std::remove_pointer_t<Ptr>> &&
     !trait::is_weak_ptr_compatible_v<Ptr>, void>
     connect(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
         using slot_t = detail::slot_pmf<Pmf, Ptr, T...>;
         auto s = make_slot<slot_t>(std::forward<Pmf>(pmf), std::forward<Ptr>(ptr), gid);
         connection conn(s);
         add_slot(std::move(s));
-        ptr->_connections.emplace_back(conn);
+        ptr->add_connection(std::move(conn));
     }
 
     /**
@@ -1221,7 +1241,7 @@ public:
     template <typename Pmf, typename Ptr>
     std::enable_if_t<
     trait::is_callable_v<arg_list, Pmf, Ptr> &&
-    !trait::is_observer_v<std::remove_pointer_t<Ptr>> &&
+    !trait::is_observer_v<Lockable, std::remove_pointer_t<Ptr>> &&
     !trait::is_weak_ptr_compatible_v<Ptr>, connection>
     connect(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
         using slot_t = detail::slot_pmf<Pmf, Ptr, T...>;
