@@ -1,3 +1,5 @@
+Sigslot20 is a fork of the original sigslot with the intention of updating it to take advantage of some C++20 features.
+
 # Sigslot, a signal-slot library
 
 Sigslot is a header-only, thread safe implementation of signal-slots for C++.
