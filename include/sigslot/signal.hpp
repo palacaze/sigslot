@@ -6,6 +6,7 @@
 #include <utility>
 #include <thread>
 #include <vector>
+#include <optional>
 
 #if defined __clang__ || (__GNUC__ > 5)
 #define SIGSLOT_MAY_ALIAS __attribute__((__may_alias__))
@@ -700,6 +701,31 @@ using observer = observer_base<std::mutex>;
 
 
 namespace detail {
+
+//concept requirements for signal_interface
+
+template <typename Sig, typename... Args>
+concept ConnectCallable =
+    requires(Sig sig, Args && ... args) {
+        {
+        sig.connect(std::forward<Args>(args)...)
+        } -> std::same_as<sigslot::connection>;
+    };
+template <typename Sig, typename... Args>
+concept ConnectExtendedCallable =
+    requires(Sig sig, Args && ... args) {
+        {
+        sig.connect_extended(std::forward<Args>(args)...)
+        } -> std::same_as<sigslot::connection>;
+    };
+
+template <typename Sig, typename... Args>
+concept DisconnectCallable =
+    requires(Sig sig, Args && ... args) {
+        {
+        sig.disconnect(std::forward<Args>(args)...)
+        } -> std::same_as<size_t>;
+    };
 
 // interface for cleanable objects, used to cleanup disconnected slots
 struct cleanable {
@@ -1543,6 +1569,90 @@ private:
 };
 
 /**
+ * signal_interface wraps a signal and allows only its owner type to invoke it.
+ *
+ * @tparam Sig The signal template.
+ * @tparam Owner The owner type.
+ * @tparam Args The signal args.
+ */
+template <template<typename...> typename Sig, typename Owner, typename... Args>
+class signal_interface final {
+    using signal_type = Sig<Args...>;
+    std::optional<signal_type> _sigStorage;
+    signal_type* _sig;
+    friend Owner;
+
+    template <typename... U>
+    void operator()(U&& ... args) {
+        (*_sig)(std::forward<U>(args)...);
+        }
+
+    size_t slot_count() noexcept {
+        return _sig->slot_count();
+        }
+
+    void block() noexcept {
+        _sig->block();
+        }
+
+    void unblock() noexcept {
+        _sig->unblock();
+        }
+
+    bool blocked() const noexcept {
+        return _sig->blocked();
+        }
+
+    signal_interface(signal_interface&&) /* not noexcept */ = default;
+    signal_interface& operator=(signal_interface&&) /* not noexcept */ = default;
+    ~signal_interface() = default;
+
+public:
+    signal_interface()
+        : _sigStorage(std::in_place)
+        , _sig(std::addressof(*_sigStorage))
+        {
+        }
+
+    explicit signal_interface(signal_type* sig)
+        : _sigStorage(std::nullopt)
+        , _sig(sig)
+        {
+        }
+
+    signal_interface(signal_interface const&) = delete;
+    signal_interface& operator=(signal_interface const&) = delete;
+
+    template <typename... Ts>
+    requires detail::ConnectCallable<signal_type, Ts...>
+    connection connect(Ts&& ... args) {
+        return _sig->connect(std::forward<Ts>(args)...);
+        }
+
+    template <typename... Ts>
+    requires detail::ConnectExtendedCallable<signal_type, Ts...>
+    connection connect_extended(Ts&& ... args) {
+        return _sig->connect_extended(std::forward<Ts>(args)...);
+        }
+
+    template <typename... Ts>
+    requires detail::ConnectCallable<signal_type, Ts...>
+    scoped_connection connect_scoped(Ts&& ... args) {
+        return _sig->connect(std::forward<Ts>(args)...);
+        }
+
+    template <typename... Ts>
+    requires detail::DisconnectCallable<signal_type, Ts...>
+    size_t disconnect(Ts&& ... args) {
+        return _sig->disconnect(std::forward<Ts>(args)...);
+        }
+
+    void disconnect_all() {
+        _sig->disconnect_all();
+        }
+};
+
+/**
  * Specialization of signal_base to be used in single threaded contexts.
  * Slot connection, disconnection and signal emission are not thread-safe.
  * The performance improvement over the thread-safe variant is not impressive,
@@ -1559,5 +1669,25 @@ using signal_st = signal_base<detail::null_mutex, T...>;
  */
 template <typename... T>
 using signal = signal_base<std::mutex, T...>;
+
+/**
+ * @brief Specialization of signal_interface for single threaded signals.
+ *
+ * @tparam Owner The owner type. The call operator will only be accessible
+ * from this type.
+ * @tparam T The arguments to the signal.
+ */
+template<typename Owner, typename... T>
+using signal_ix_st = signal_interface<signal_st, Owner, T...>;
+
+/**
+ * @brief Specialization of signal_interface for multi-threaded signals.
+ *
+ * @tparam Owner The owner type. The call operator will only be accessible
+ * from this type.
+ * @tparam T The arguments to the signal.
+ */
+template<typename Owner, typename... T>
+using signal_ix = signal_interface<signal, Owner, T...>;
 
 } // namespace sigslot
