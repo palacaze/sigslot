@@ -22,7 +22,7 @@ struct oo {
 
 struct dummy {};
 
-static_assert(sigslot::trait::is_callable_v<sigslot::trait::typelist<int>, decltype(&s::f1), std::shared_ptr<s>>, "");
+static_assert(sigslot::trait::MemberCallable<decltype(&s::f1), std::shared_ptr<s>, int>, "");
 
 void test_track_shared() {
     sum = 0;

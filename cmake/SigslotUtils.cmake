@@ -105,7 +105,7 @@ option(SIGSLOT_SANITIZE_UNDEFINED "Compile with undefined sanitizer support" OFF
 
 # common properties
 function(sigslot_set_properties target scope)
-    target_compile_features(${target} ${scope} cxx_std_14)
+    target_compile_features(${target} ${scope} cxx_std_20)
     set_target_properties(${target} PROPERTIES CXX_EXTENSIONS OFF)
 
     # account for options

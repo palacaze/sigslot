@@ -29,9 +29,6 @@ struct observer_type {};
 
 namespace trait {
 
-/// represent a list of types
-template <typename...> struct typelist {};
-
 /**
  * Pointers that can be converted to a weak pointer concept for tracking
  * purpose must implement the to_weak() function in order to make use of
@@ -48,55 +45,6 @@ std::weak_ptr<T> to_weak(std::shared_ptr<T> s) {
     return s;
 }
 
-// tools
-namespace detail {
-
-template <typename...>
-struct voider { using type = void; };
-
-// void_t from c++17
-template <typename...T>
-using void_t = typename detail::voider<T...>::type;
-
-template <typename, typename = void>
-struct has_call_operator : std::false_type {};
-
-template <typename F>
-struct has_call_operator<F, void_t<decltype(&std::remove_reference<F>::type::operator())>>
-    : std::true_type {};
-
-template <typename, typename, typename = void, typename = void>
-struct is_callable : std::false_type {};
-
-template <typename F, typename P, typename... T>
-struct is_callable<F, P, typelist<T...>,
-        void_t<decltype(((*std::declval<P>()).*std::declval<F>())(std::declval<T>()...))>>
-    : std::true_type {};
-
-template <typename F, typename... T>
-struct is_callable<F, typelist<T...>,
-        void_t<decltype(std::declval<F>()(std::declval<T>()...))>>
-    : std::true_type {};
-
-
-template <typename T, typename = void>
-struct is_weak_ptr : std::false_type {};
-
-template <typename T>
-struct is_weak_ptr<T, void_t<decltype(std::declval<T>().expired()),
-                             decltype(std::declval<T>().lock()),
-                             decltype(std::declval<T>().reset())>>
-    : std::true_type {};
-
-template <typename T, typename = void>
-struct is_weak_ptr_compatible : std::false_type {};
-
-template <typename T>
-struct is_weak_ptr_compatible<T, void_t<decltype(to_weak(std::declval<T>()))>>
-    : is_weak_ptr<decltype(to_weak(std::declval<T>()))> {};
-
-} // namespace detail
-
 static constexpr bool with_rtti =
 #ifdef SIGSLOT_RTTI_ENABLED
         true;
@@ -104,32 +52,44 @@ static constexpr bool with_rtti =
         false;
 #endif
 
-/// determine if a pointer is convertible into a "weak" pointer
-template <typename P>
-constexpr bool is_weak_ptr_compatible_v = detail::is_weak_ptr_compatible<std::decay_t<P>>::value;
+template<typename F, typename... T>
+concept Callable = requires(F f, T... ts) {
+    f(ts...);
+};
 
-/// determine if a type T (Callable or Pmf) is callable with supplied arguments
-template <typename L, typename... T>
-constexpr bool is_callable_v = detail::is_callable<T..., L>::value;
+template<typename F, typename P, typename... T>
+concept MemberCallable = requires(F f, P p, T... ts) {
+    ((*p).*f)(ts...);
+};
 
-template <typename T>
-constexpr bool is_weak_ptr_v = detail::is_weak_ptr<T>::value;
+template<typename T>
+concept WeakPtr = requires(T p) {
+    p.expired();
+    p.lock();
+    p.reset();
+};
 
-template <typename T>
-constexpr bool has_call_operator_v = detail::has_call_operator<T>::value;
+template<typename T>
+concept WeakPtrCompatible = requires(T t) {
+    { to_weak(t) } -> WeakPtr;
+};
 
-template <typename T>
-constexpr bool is_pointer_v = std::is_pointer<T>::value;
+template<typename T>
+concept Functor = std::is_member_function_pointer_v<
+                        decltype(&std::remove_reference_t<T>::operator())>;
 
-template <typename T>
-constexpr bool is_func_v = std::is_function<T>::value;
+template<typename T>
+concept Pointer = std::is_pointer_v<T>;
 
-template <typename T>
-constexpr bool is_pmf_v = std::is_member_function_pointer<T>::value;
+template<typename T>
+concept Function = std::is_function_v<T>;
 
-template <typename T>
-constexpr bool is_observer_v = std::is_base_of<::sigslot::detail::observer_type,
-                                               std::remove_pointer_t<T>>::value;
+template<typename T>
+concept MemFnPointer = std::is_member_function_pointer_v<T>;
+
+template<typename T>
+concept Observer = std::is_base_of_v<::sigslot::detail::observer_type,
+                                     std::remove_pointer_t<T>>;
 
 } // namespace trait
 
@@ -208,8 +168,7 @@ union SIGSLOT_MAY_ALIAS func_ptr {
     char data[sizeof(mock::fun_types)];
 };
 
-
-template <typename T, typename = void>
+template <typename T>
 struct function_traits {
     static void ptr(const T &/*t*/, func_ptr &d) {
         d.value<std::nullptr_t>() = nullptr;
@@ -219,8 +178,8 @@ struct function_traits {
     static constexpr bool must_check_object = true;
 };
 
-template <typename T>
-struct function_traits<T, std::enable_if_t<trait::is_func_v<T>>> {
+template <trait::Function T>
+struct function_traits<T> {
     static void ptr(T &t, func_ptr &d) {
         d.value<T*>() = &t;
     }
@@ -229,8 +188,8 @@ struct function_traits<T, std::enable_if_t<trait::is_func_v<T>>> {
     static constexpr bool must_check_object = false;
 };
 
-template <typename T>
-struct function_traits<T*, std::enable_if_t<trait::is_func_v<T>>> {
+template <trait::Function T>
+struct function_traits<T*> {
     static void ptr(T *t, func_ptr &d) {
         d.value<T*>() = t;
     }
@@ -239,8 +198,8 @@ struct function_traits<T*, std::enable_if_t<trait::is_func_v<T>>> {
     static constexpr bool must_check_object = false;
 };
 
-template <typename T>
-struct function_traits<T, std::enable_if_t<trait::is_pmf_v<T>>> {
+template <trait::MemFnPointer T>
+struct function_traits<T> {
     static void ptr(const T &t, func_ptr &d) {
         d.value<T>() = t;
     }
@@ -250,8 +209,8 @@ struct function_traits<T, std::enable_if_t<trait::is_pmf_v<T>>> {
 };
 
 // for function objects, the assumption is that we are looking for the call operator
-template <typename T>
-struct function_traits<T, std::enable_if_t<trait::has_call_operator_v<T>>> {
+template <trait::Functor T>
+struct function_traits<T> {
     using call_type = decltype(&std::remove_reference<T>::type::operator());
 
     static void ptr(const T &/*t*/, func_ptr &d) {
@@ -280,7 +239,7 @@ using obj_ptr = const void*;
 template <typename T>
 obj_ptr get_object_ptr(const T &t);
 
-template <typename T, typename = void>
+template <typename T>
 struct object_pointer {
     static obj_ptr get(const T&) {
         return nullptr;
@@ -288,24 +247,24 @@ struct object_pointer {
 };
 
 template <typename T>
-struct object_pointer<T*, std::enable_if_t<trait::is_pointer_v<T*>>> {
+requires trait::Pointer<T*>
+struct object_pointer<T*> {
     static obj_ptr get(const T *t) {
         return reinterpret_cast<obj_ptr>(t);
     }
 };
 
-template <typename T>
-struct object_pointer<T, std::enable_if_t<trait::is_weak_ptr_v<T>>> {
+template <trait::WeakPtr T>
+struct object_pointer<T> {
     static obj_ptr get(const T &t) {
         auto p = t.lock();
         return get_object_ptr(p);
     }
 };
 
-template <typename T>
-struct object_pointer<T, std::enable_if_t<!trait::is_pointer_v<T> &&
-                                          !trait::is_weak_ptr_v<T> &&
-                                          trait::is_weak_ptr_compatible_v<T>>>
+template <trait::WeakPtrCompatible T>
+requires (!trait::Pointer<T> && !trait::WeakPtr<T>)
+struct object_pointer<T>
 {
     static obj_ptr get(const T &t) {
         return t ? reinterpret_cast<obj_ptr>(t.get()) : nullptr;
@@ -395,8 +354,8 @@ public:
     {}
 
     template <typename U>
-    explicit copy_on_write(U && x, std::enable_if_t<!std::is_same<std::decay_t<U>,
-                           copy_on_write>::value>* = nullptr)
+    requires (!std::same_as<std::decay_t<U>, copy_on_write>)
+    explicit copy_on_write(U && x)
         : m_data(new payload(std::forward<U>(x)))
     {}
 
@@ -762,7 +721,6 @@ using slot_ptr = std::shared_ptr<slot_base<T...>>;
 template <typename... Args>
 class slot_base : public slot_state {
 public:
-    using base_types = trait::typelist<Args...>;
 
     explicit slot_base(cleanable &c, group_id gid)
         : slot_state(gid)
@@ -790,14 +748,14 @@ public:
     }
 
     template <typename C>
-    std::enable_if_t<function_traits<C>::must_check_object, bool>
-    has_full_callable(const C &c) const {
+    requires (function_traits<C>::must_check_object)
+    bool has_full_callable(const C &c) const {
         return has_callable(c) && check_class_type<std::decay_t<C>>();
     }
 
     template <typename C>
-    std::enable_if_t<!function_traits<C>::must_check_object, bool>
-    has_full_callable(const C &c) const {
+    requires (!function_traits<C>::must_check_object)
+    bool has_full_callable(const C &c) const {
         return has_callable(c);
     }
 
@@ -1127,8 +1085,6 @@ class signal_base final : public detail::cleanable {
     using list_type = std::vector<group_type>;  // kept ordered by ascending gid
 
 public:
-    using arg_list = trait::typelist<T...>;
-    using ext_arg_list = trait::typelist<connection&, T...>;
 
     signal_base() noexcept : m_block(false) {}
     ~signal_base() override {
@@ -1198,8 +1154,8 @@ public:
      * @return a connection object that can be used to interact with the slot
      */
     template <typename Callable>
-    std::enable_if_t<trait::is_callable_v<arg_list, Callable>, connection>
-    connect(Callable && c, group_id gid = 0) {
+    requires trait::Callable<Callable, T...>
+    connection connect(Callable && c, group_id gid = 0) {
         using slot_t = detail::slot<Callable, T...>;
         auto s = make_slot<slot_t>(std::forward<Callable>(c), gid);
         connection conn(s);
@@ -1218,8 +1174,8 @@ public:
      * @return a connection object that can be used to interact with the slot
      */
     template <typename Callable>
-    std::enable_if_t<trait::is_callable_v<ext_arg_list, Callable>, connection>
-    connect_extended(Callable && c, group_id gid = 0) {
+    requires trait::Callable<Callable, connection&, T...>
+    connection connect_extended(Callable && c, group_id gid = 0) {
         using slot_t = detail::slot_extended<Callable, T...>;
         auto s = make_slot<slot_t>(std::forward<Callable>(c), gid);
         connection conn(s);
@@ -1237,10 +1193,9 @@ public:
      * @param gid an identifier that can be used to order slot execution
      * @return a connection object that can be used to interact with the slot
      */
-    template <typename Pmf, typename Ptr>
-    std::enable_if_t<trait::is_callable_v<arg_list, Pmf, Ptr> &&
-                     trait::is_observer_v<Ptr>, connection>
-    connect(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
+    template <typename Pmf, trait::Observer Ptr>
+    requires trait::MemberCallable<Pmf, Ptr, T...>
+    connection connect(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
         using slot_t = detail::slot_pmf<Pmf, Ptr, T...>;
         auto s = make_slot<slot_t>(std::forward<Pmf>(pmf), std::forward<Ptr>(ptr), gid);
         connection conn(s);
@@ -1258,10 +1213,9 @@ public:
      * @return a connection object that can be used to interact with the slot
      */
     template <typename Pmf, typename Ptr>
-    std::enable_if_t<trait::is_callable_v<arg_list, Pmf, Ptr> &&
-                     !trait::is_observer_v<Ptr> &&
-                     !trait::is_weak_ptr_compatible_v<Ptr>, connection>
-    connect(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
+    requires trait::MemberCallable<Pmf, Ptr, T...> &&
+            (!trait::Observer<Ptr> && !trait::WeakPtrCompatible<Ptr>)
+    connection connect(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
         using slot_t = detail::slot_pmf<Pmf, Ptr, T...>;
         auto s = make_slot<slot_t>(std::forward<Pmf>(pmf), std::forward<Ptr>(ptr), gid);
         connection conn(s);
@@ -1278,9 +1232,9 @@ public:
      * @return a connection object that can be used to interact with the slot
      */
     template <typename Pmf, typename Ptr>
-    std::enable_if_t<trait::is_callable_v<ext_arg_list, Pmf, Ptr> &&
-                     !trait::is_weak_ptr_compatible_v<Ptr>, connection>
-    connect_extended(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
+    requires trait::MemberCallable<Pmf, Ptr, connection&, T...> &&
+            (!trait::WeakPtrCompatible<Ptr>)
+    connection connect_extended(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
         using slot_t = detail::slot_pmf_extended<Pmf, Ptr, T...>;
         auto s = make_slot<slot_t>(std::forward<Pmf>(pmf), std::forward<Ptr>(ptr), gid);
         connection conn(s);
@@ -1306,10 +1260,9 @@ public:
      * @param gid an identifier that can be used to order slot execution
      * @return a connection object that can be used to interact with the slot
      */
-    template <typename Pmf, typename Ptr>
-    std::enable_if_t<!trait::is_callable_v<arg_list, Pmf> &&
-                     trait::is_weak_ptr_compatible_v<Ptr>, connection>
-    connect(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
+    template <typename Pmf, trait::WeakPtrCompatible Ptr>
+    requires (!trait::Callable<Pmf, T...>)
+    connection connect(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
         using trait::to_weak;
         auto w = to_weak(std::forward<Ptr>(ptr));
         using slot_t = detail::slot_pmf_tracked<Pmf, decltype(w), T...>;
@@ -1336,10 +1289,9 @@ public:
      * @param gid an identifier that can be used to order slot execution
      * @return a connection object that can be used to interact with the slot
      */
-    template <typename Callable, typename Trackable>
-    std::enable_if_t<trait::is_callable_v<arg_list, Callable> &&
-                     trait::is_weak_ptr_compatible_v<Trackable>, connection>
-    connect(Callable && c, Trackable && ptr, group_id gid = 0) {
+    template <typename Callable, trait::WeakPtrCompatible Trackable>
+    requires trait::Callable<Callable, T...>
+    connection connect(Callable && c, Trackable && ptr, group_id gid = 0) {
         using trait::to_weak;
         auto w = to_weak(std::forward<Trackable>(ptr));
         using slot_t = detail::slot_tracked<Callable, decltype(w), T...>;
@@ -1373,11 +1325,11 @@ public:
      * @return the number of disconnected slots
      */
     template <typename Callable>
-    std::enable_if_t<(trait::is_callable_v<arg_list, Callable> ||
-                      trait::is_callable_v<ext_arg_list, Callable> ||
-                      trait::is_pmf_v<Callable>) &&
-                     detail::function_traits<Callable>::is_disconnectable, size_t>
-    disconnect(const Callable &c) {
+    requires (trait::Callable<Callable, T...> ||
+              trait::Callable<Callable, connection&, T...> ||
+              trait::MemFnPointer<Callable>)
+    && detail::function_traits<Callable>::is_disconnectable
+    size_t disconnect(const Callable &c) {
         return disconnect_if([&] (const auto &s) {
             return s->has_full_callable(c);
         });
@@ -1396,10 +1348,10 @@ public:
      * @return the number of disconnected slots
      */
     template <typename Obj>
-    std::enable_if_t<!trait::is_callable_v<arg_list, Obj> &&
-                     !trait::is_callable_v<ext_arg_list, Obj> &&
-                     !trait::is_pmf_v<Obj>, size_t>
-    disconnect(const Obj &obj) {
+    requires (!trait::Callable<Obj, T...> &&
+              !trait::Callable<Obj, connection&, T...> &&
+              !trait::MemFnPointer<Obj>)
+    size_t disconnect(const Obj &obj) {
         return disconnect_if([&] (const auto &s) {
             return s->has_object(obj);
         });
