@@ -28,7 +28,7 @@ jobs:
           - os: ubuntu-20.04
             cxx: "clang++"
           - os: windows-latest
-            cxx: "msvc" 
+            cxx: "clang-cl" 
     steps:
     - uses: actions/checkout@v2
     
