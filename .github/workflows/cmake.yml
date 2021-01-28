@@ -25,7 +25,7 @@ jobs:
       matrix:
         config:
           - { name: "Windows clang-cl", os: windows-latest, cc: "clang-cl", cxx: "clang-cl" }
-          - { name: "Ubuntu gcc", os: ubuntu-20.04, cc: "gcc", cxx: "g++" }
+          - { name: "Ubuntu gcc", os: ubuntu-20.04, cc: "gcc-10", cxx: "g++-10" }
           - { name: "Ubuntu clang", os: ubuntu-20.04, cc: "clang", cxx: "clang++" }
     steps:
     - uses: actions/checkout@v2
