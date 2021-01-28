@@ -33,8 +33,7 @@ jobs:
       # We'll use this as our working directory for all subsequent commands
       run: cmake -E make_directory ${{github.workspace}}/build
     - name: Update path
-      shell: bash
-      run: echo "/c/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise/VC/Tools/Llvm/bin" >> $GITHUB_PATH
+      uses: microsoft/setup-msbuild@v1.0.2   
       if: runner.os == 'Windows'
     - name: Setup Ninja
       uses: ashutoshvarma/setup-ninja@master
