@@ -36,7 +36,7 @@ jobs:
     - name: Update path
       run: |
         dir "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Tools\Llvm\bin"
-        echo "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Tools\Llvm\bin" >> $GITHUB_PATH
+        echo "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Tools\Llvm\bin" >> %GITHUB_PATH%
       if: runner.os == 'Windows'
     - name: Setup Ninja
       uses: ashutoshvarma/setup-ninja@master
