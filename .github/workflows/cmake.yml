@@ -4,6 +4,11 @@ on:
   push:
     branches: 
       - master
+    paths:
+      - '**.cpp'
+      - '**.hpp'
+      - '**/CMakeLists.txt'
+      - '**.cmake'
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
@@ -14,7 +19,10 @@ jobs:
     # well on Windows or Mac.  You can convert this to a matrix build if you need
     # cross-platform coverage.
     # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
-    runs-on: ubuntu-20.04
+    runs-on: ${{ matrix.os }};
+    strategy:
+      matrix:
+        os: [ubuntu-20.04, windows-latest]
 
     steps:
     - uses: actions/checkout@v2
@@ -32,7 +40,7 @@ jobs:
       # Note the current convention is to use the -S and -B options here to specify source 
       # and build directories, but this is only available with CMake 3.13 and higher.  
       # The CMake binaries on the Github Actions machines are (as of this writing) 3.12
-      run: cmake $GITHUB_WORKSPACE -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSIGSLOT_RUN_TESTS=OFF
+      run: cmake $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSIGSLOT_RUN_TESTS=OFF
 
     - name: Build
       working-directory: ${{github.workspace}}/build
