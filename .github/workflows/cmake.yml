@@ -49,7 +49,7 @@ jobs:
       
       run: |
           cmake $GITHUB_WORKSPACE -G Ninja -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSIGSLOT_RUN_TESTS=OFF
-          cmake --build . --config $BUILD_TYPE --target tests
+          cmake --build build --config $BUILD_TYPE --target tests
 
     - name: Test
       working-directory: ${{github.workspace}}/build/test
