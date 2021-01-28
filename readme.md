@@ -1,4 +1,5 @@
 # Sigslot20, a signal-slot library
+![GitHub Workflow Status](https://img.shields.io/github/workflow/status/mousebyte/sigslot20/CMake)
 
 Sigslot20 is a C++20 fork of [palacaze/sigslot](https://github.com/palacaze/sigslot) with a few added features. It's a header-only, thread safe implementation of signal-slots for C++. Since C++20 support isn't yet widely used in production environments, this is more of an experiment than anything else; however, the unit tests are working fine and Sigslot20 should be compatible with code that depends on the original (as long as it doesn't go poking around in the `detail` namespaces and such).
 
