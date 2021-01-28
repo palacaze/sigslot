@@ -9,6 +9,7 @@ on:
       - '**.hpp'
       - '**/CMakeLists.txt'
       - '**.cmake'
+      - '.github/workflows/**.yml'
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
