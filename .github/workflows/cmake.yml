@@ -26,9 +26,9 @@ jobs:
         os: [ubuntu-20.04, windows-latest]
         include:
           - os: ubuntu-20.04
-            cxx: "clang++"
+            compiler: clang++
           - os: windows-latest
-            cxx: "clang-cl" 
+            compiler: clang-cl
     steps:
     - uses: actions/checkout@v2
     
@@ -38,8 +38,6 @@ jobs:
       run: cmake -E make_directory ${{github.workspace}}/build
 
     - name: Configure CMake
-      env:
-        CXX: ${{ matrix.cxx }}
       # Use a bash shell so we can use the same syntax for environment variable
       # access regardless of the host operating system
       shell: bash
