@@ -1,8 +1,69 @@
-Sigslot20 is a fork of the original sigslot with the intention of updating it to take advantage of some C++20 features.
+# Sigslot20, a signal-slot library
 
-# Sigslot, a signal-slot library
+Sigslot20 is a C++20 fork of [palacaze/sigslot](https://github.com/palacaze/sigslot) with a few added features. It's a header-only, thread safe implementation of signal-slots for C++. Since C++20 support isn't yet widely used in production environments, this is more of an experiment than anything else; however, the unit tests are working fine and Sigslot20 should be compatible with code that depends on the original (as long as it doesn't go poking around in the `detail` namespaces and such).
 
-Sigslot is a header-only, thread safe implementation of signal-slots for C++.
+#### To-Do
+- [x] Replace SFINAE with C++20 concepts
+- [x] Add `signal_interface` class
+- [ ] Allow group type to be parameterized
+- [ ] Allow blocking by group
+- [ ] Add new unit tests
+
+## In This Readme
+* [Differences from palacaze/sigslot](#differences-from-sigslot)
+* [Features](#features)
+* [Installation](#installation)
+* [Documentation](#documentation)
+	* [Basic usage](#basic-usage)
+	* [Signal with arguments](#signal-with-arguments)
+		* [Coping with overloads](#coping-with-overloaded-functions)
+		* [Coping with default arguments](#coping-with-function-with-default-arguments)
+	* [Connection management](#connection-management)
+		* [Connection object](#connection-object)
+		* [Extended connection signature](#extended-connection-signature)
+		* [Automatic lifetime tracking](#automatic-slot-lifetime-tracking)
+		* [Intrusive lifetime tracking](#intrusive-slot-lifetime-tracking)
+	* [Disconnection without a connection object](#disconnection-without-a-connection-object)
+	* [Slot groups](#enforcing-slot-invocation-order-with-slot-groups)
+	* [Thread safety](#thread-safety)
+	* [Implementation details](#implementation-details)
+	* [Known bugs](#known-bugs)
+
+
+
+## Differences from sigslot
+Sigslot20 takes advantage of some C++20 features, such as concepts. It also adds a new class, `signal_interface`, which wraps a signal and provides access control to a template friend. This is useful for UI classes, which can expose a public member `signal_interface` that can only be called or blocked from within the class. Two type aliases are provided for convenience: `signal_ix_st` (which wraps a `signal_st`) and `signal_ix` (which wraps a `signal`).
+
+`signal_interface` example:
+```c++
+#include <sigslot/signal.hpp>
+
+class sig_owner {
+    sigslot::signal<float> _privateSig;
+public:
+    sigslot::signal_ix<sig_owner, int> IntSignal; //signals can use their own internal signal object
+    sigslot::signal_ix<sig_owner, flot> FloatSignal;
+    sig_owner() : FloatSignal(&_privateSig) { }   //or take a pointer to an existing signal
+    
+    void do_stuff() {
+        FloatSignal(3.0f); //can access private call operator and blocking function from here
+    }
+};
+
+void foo() {
+    sig_owner o;
+    
+    //functions outside sig_owner can connect and disconnect
+    o.IntSignal.connect([](int) {
+        //do stuff
+    });
+    o.IntSignal.disconnect(3);
+    
+    //but can't access the private call operators or blocking functions
+    //o.IntSignal(5);
+    //o.IntSignal.block();
+}
+```
 
 ## Features
 
@@ -16,21 +77,30 @@ Apart from the usual features, it offers
 - Slot groups to enforce slots execution order,
 - Reasonable performance. and a simple and straightforward implementation.
 
-Sigslot is unit-tested and should be reliable and stable enough to replace Boost Signals2.
+Sigslot20 is unit-tested and should be reliable and stable enough to replace Boost Signals2.
+*note: `signal_interface` is not yet unit-tested as of right now.*
 
 The tests run cleanly under the address, thread and undefined behaviour sanitizers.
 
-Many implementations allow signal return types, Sigslot does not because I have
+From [palacaze/sigslot](https://github.com/palacaze/sigslot) on signal return types:
+>Many implementations allow signal return types, Sigslot does not because I have
 no use for them. If I can be convinced of otherwise I may change my mind later on.
+
+I generally agree with this sentiment and have no intention of adding them in this fork.
 
 ## Installation
 
 No compilation or installation is required, just include `sigslot/signal.hpp`
-and use it. Sigslot currently depends on a C++14 compliant compiler, but if need
-arises it may be retrofitted to C++11. It is known to work with Clang 4.0 and GCC
-5.0+ compilers on GNU Linux, MSVC 2017 and up, Clang-cl and MinGW on Windows.
+and use it. *__Sigslot20 depends on a compiler with C++20 concepts support.__* It should
+work on modern variants of GCC, Clang, and MSVC. If you'd like to help provide info about
+specific compiler version support, feel free to open an issue. Make sure to build the tests
+target and include the results in the issue. *Some of the CMake configuration probably needs to
+be updated.* I'm not the most adept with CMake, but I will try to update it as I learn more or
+as issues/PRs come in.
 
-However, be aware of a potential gotcha on Windows with MSVC and Clang-Cl compilers,
+Currently I've tested Sigslot20 with Clang 11 on Mingw 64.
+
+Be aware of a potential gotcha on Windows with MSVC and Clang-Cl compilers,
 which may need the `/OPT:NOICF` linker flags in exceptional situations. Read The
 Implementation Details chapter for an explanation.
 
@@ -699,4 +769,5 @@ compilers.
 ### Known bugs
 
 Using generic lambdas with GCC less than version 7.4 can trigger [Bug #68071](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=68071).
+
 
