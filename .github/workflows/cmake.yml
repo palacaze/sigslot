@@ -34,6 +34,7 @@ jobs:
       run: cmake -E make_directory ${{github.workspace}}/build
     - name: Configure cmake
       shell: bash
+      working-directory: ${{github.workspace}}/build
       env:
         CC: ${{ matrix.config.cc }}
         CXX: ${{ matrix.config.cxx }}
