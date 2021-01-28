@@ -46,9 +46,10 @@ jobs:
         version: 1.10.0
       if: runner.os != 'Windows'
     - name: Build
+      working-directory: ${{github.workspace}}/build
       shell: bash
       
-      run: cmake --build build --config $BUILD_TYPE --target tests
+      run: cmake --build . --config $BUILD_TYPE --target tests
     - name: Test
       working-directory: ${{github.workspace}}/build/test
       shell: bash
