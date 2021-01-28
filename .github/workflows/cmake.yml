@@ -23,14 +23,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-20.04, windows-latest]
-        include:
-          - os: ubuntu-20.04
-            c-compiler: clang
-            cxx-compiler: clang++
-          - os: windows-latest
-            c-compiler: clang-cl
-            cxx-compiler: clang-cl
+        config:
+          - { name: "Windows MSVC", os: windows-latest, cc: "clang-cl", cxx: "clang-cl" }
     steps:
     - uses: actions/checkout@v2
     
@@ -44,27 +38,18 @@ jobs:
         ls "/c/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise/VC/Tools/Llvm/bin"
         echo "/c/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise/VC/Tools/Llvm/bin" >> $GITHUB_PATH
       if: runner.os == 'Windows'
-    - name: Configure CMake
-      # Use a bash shell so we can use the same syntax for environment variable
-      # access regardless of the host operating system
-      shell: bash
-      working-directory: ${{github.workspace}}/build
-      env:
-        C_COMPILER: ${{ matrix.c-compiler }}
-        CXX_COMPILER: ${{ matrix.cxx-compiler }}
-      # Note the current convention is to use the -S and -B options here to specify source 
-      # and build directories, but this is only available with CMake 3.13 and higher.  
-      # The CMake binaries on the Github Actions machines are (as of this writing) 3.12
-      run: |
-        echo $COMPILER
-        echo $PATH
-        cmake $GITHUB_WORKSPACE -G "Ninja" -DCMAKE_C_COMPILER=$C_COMPILER -DCMAKE_CXX_COMPILER=$CXX_COMPILER -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSIGSLOT_RUN_TESTS=OFF
-
+    - name: Setup Ninja
+      uses: ashutoshvarma/setup-ninja@master
+      with:
+        # ninja version to download. Default: 1.10.0
+        version: 1.10.0
     - name: Build
-      working-directory: ${{github.workspace}}/build
-      shell: bash
-      # Execute the build.  You can specify a specific target with "--target <NAME>"
-      run: cmake --build . --config $BUILD_TYPE --target tests
+      uses: ashutoshvarma/action-cmake-build@v1
+      with:
+        cc: ${{ matrix.config.cc }}
+        cxx: ${{ matrix.config.cxx }}
+        target: tests
+        configure-options: -G Ninja -DSIGSLOT_RUN_TESTS=OFF
 
     - name: Test
       working-directory: ${{github.workspace}}/build/test
