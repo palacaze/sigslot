@@ -1,8 +1,16 @@
 enable_testing()
 
+
 add_custom_target(tests
-    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    COMMENT "Build and run all the unit tests.")
+    #COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+    COMMENT "Build all the unit tests.")
+	
+if(SIGSLOT_RUN_TESTS)
+	add_custom_command(TARGET tests
+					   POST_BUILD
+					   COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure)
+endif()
+
 
 macro(pal_create_test target ut)
     add_executable(${target} EXCLUDE_FROM_ALL "${ut}")

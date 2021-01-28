@@ -8,6 +8,7 @@ include(SigslotUtils)
 ### options
 option(SIGSLOT_COMPILE_EXAMPLES "Compile optional exemples" ON)
 option(SIGSLOT_COMPILE_TESTS "Compile tests" ON)
+option(SIGSLOT_RUN_TESTS "Compile and run tests" ON)
 option(SIGSLOT_REDUCE_COMPILE_TIME "Attempt at reducing code size and compilation time" OFF)
 
 find_package(Threads REQUIRED)
@@ -90,6 +91,6 @@ if(SIGSLOT_COMPILE_EXAMPLES)
     add_subdirectory(example)
 endif()
 
-if(SIGSLOT_COMPILE_TESTS)
+if(SIGSLOT_COMPILE_TESTS OR SIGSLOT_RUN_TESTS)
     add_subdirectory(test)
 endif()
