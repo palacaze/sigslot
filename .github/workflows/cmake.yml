@@ -42,7 +42,7 @@ jobs:
         CXX: ${{ matrix.config.cxx }}
       
       run: cmake $GITHUB_WORKSPACE -G "Visual Studio 16 2019" -T ClangCl -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSIGSLOT_RUN_TESTS=OFF
-      if: runner.os == windows
+      if: runner.os == 'Windows'
     - name: Setup Ninja
       uses: ashutoshvarma/setup-ninja@master
       with:
