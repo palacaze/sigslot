@@ -24,7 +24,9 @@ jobs:
     strategy:
       matrix:
         config:
-          - { name: "Windows MSVC", os: windows-latest, cc: "clang-cl", cxx: "clang-cl" }
+          - { name: "Windows clang-cl", os: windows-latest, cc: "clang-cl", cxx: "clang-cl" }
+          - { name: "Ubuntu gcc", os: ubuntu-20.04, cc: "gcc", cxx: "g++" }
+          - { name: "Ubuntu clang", os: ubuntu-20.04, cc: "clang", cxx: "clang++" }
     steps:
     - uses: actions/checkout@v2
     
