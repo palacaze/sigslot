@@ -7,6 +7,7 @@
 #include <thread>
 #include <vector>
 #include <optional>
+#include <concepts>
 
 #if defined __clang__ || (__GNUC__ > 5)
 #define SIGSLOT_MAY_ALIAS __attribute__((__may_alias__))
@@ -94,13 +95,16 @@ concept Observer = std::is_base_of_v<::sigslot::detail::observer_type,
 
 } // namespace trait
 
-template <typename, typename...>
-class signal_base;
+template<typename T>
+concept GroupId = requires(T g1, T g2) {
+    requires std::is_default_constructible_v<T>;
+    requires std::is_copy_constructible_v<T>;
+    { g1 < g2 } -> std::convertible_to<bool>;
+    { g1 == g2 } -> std::convertible_to<bool>;
+};
 
-/**
- * A group_id is used to identify a group of slots
- */
-using group_id = std::int32_t;
+template <GroupId, typename, typename...>
+class signal_base;
 
 namespace detail {
 
@@ -463,9 +467,8 @@ inline std::shared_ptr<B> make_shared(Arg && ... arg) {
  */
 class slot_state {
 public:
-    constexpr slot_state(group_id gid) noexcept
+    constexpr slot_state() noexcept
         : m_index(0)
-        , m_group(gid)
         , m_connected(true)
         , m_blocked(false)
     {}
@@ -497,18 +500,28 @@ protected:
         return m_index;
     }
 
-    group_id group() const {
-        return m_group;
-    }
-
 private:
-    template <typename, typename...>
+    template <GroupId, typename, typename...>
     friend class ::sigslot::signal_base;
 
     std::size_t m_index;     // index into the array of slot pointers inside the signal
-    const group_id m_group;  // slot group this slot belongs to
     std::atomic<bool> m_connected;
     std::atomic<bool> m_blocked;
+};
+
+template<typename Group>
+class grouped_slot : public slot_state {
+protected:
+    explicit grouped_slot(Group const& gid)
+        : slot_state()
+        , m_group(gid)
+    {}
+public:
+    Group const& group() const {
+        return m_group;
+    }
+private:
+    const Group m_group;
 };
 
 } // namespace detail
@@ -608,7 +621,7 @@ public:
     }
 
 protected:
-    template <typename, typename...> friend class signal_base;
+    template <GroupId, typename, typename...> friend class signal_base;
     explicit connection(std::weak_ptr<detail::slot_state> s) noexcept
         : m_state{std::move(s)}
     {}
@@ -645,7 +658,7 @@ public:
     }
 
 private:
-    template <typename, typename...> friend class signal_base;
+    template <GroupId, typename, typename...> friend class signal_base;
     explicit scoped_connection(std::weak_ptr<detail::slot_state> s) noexcept
         : connection{std::move(s)}
     {}
@@ -677,7 +690,7 @@ protected:
     }
 
 private:
-    template <typename, typename ...>
+    template <GroupId, typename, typename ...>
     friend class signal_base;
 
     void add_connection(connection conn) {
@@ -728,28 +741,29 @@ concept DisconnectCallable =
     };
 
 // interface for cleanable objects, used to cleanup disconnected slots
+template<typename Group>
 struct cleanable {
     virtual ~cleanable() = default;
-    virtual void clean(slot_state *) = 0;
+    virtual void clean(grouped_slot<Group> *) = 0;
 };
 
-template <typename...>
+template <typename Group, typename...>
 class slot_base;
 
-template <typename... T>
-using slot_ptr = std::shared_ptr<slot_base<T...>>;
+template <typename Group, typename... T>
+using slot_ptr = std::shared_ptr<slot_base<Group, T...>>;
 
 
 /* A base class for slot objects. This base type only depends on slot argument
  * types, it will be used as an element in an intrusive singly-linked list of
  * slots, hence the public next member.
  */
-template <typename... Args>
-class slot_base : public slot_state {
+template <typename Group, typename... Args>
+class slot_base : public grouped_slot<Group> {
 public:
-
-    explicit slot_base(cleanable &c, group_id gid)
-        : slot_state(gid)
+    using group_id = Group;
+    explicit slot_base(cleanable<Group> &c, group_id const& gid)
+        : grouped_slot<Group>(gid)
         , cleaner(c)
     {}
     ~slot_base() override = default;
@@ -826,19 +840,19 @@ private:
 #endif
 
 private:
-    cleanable &cleaner;
+    cleanable<Group> &cleaner;
 };
 
 /*
  * A slot object holds state information, and a callable to to be called
  * whenever the function call operator of its slot_base base class is called.
  */
-template <typename Func, typename... Args>
-class slot final : public slot_base<Args...> {
+template <typename Group, typename Func, typename... Args>
+class slot final : public slot_base<Group, Args...> {
 public:
-    template <typename F, typename Gid>
-    constexpr slot(cleanable &c, F && f, Gid gid)
-        : slot_base<Args...>(c, gid)
+    template <typename F>
+    constexpr slot(cleanable<Group> &c, F && f, Group const& gid)
+        : slot_base<Group, Args...>(c, gid)
         , func{std::forward<F>(f)} {}
 
 protected:
@@ -863,12 +877,12 @@ private:
 /*
  * Variation of slot that prepends a connection object to the callable
  */
-template <typename Func, typename... Args>
-class slot_extended final : public slot_base<Args...> {
+template <typename Group, typename Func, typename... Args>
+class slot_extended final : public slot_base<Group, Args...> {
 public:
     template <typename F>
-    constexpr slot_extended(cleanable &c, F && f, group_id gid)
-        : slot_base<Args...>(c, gid)
+    constexpr slot_extended(cleanable<Group> &c, F && f, Group const& gid)
+        : slot_base<Group, Args...>(c, gid)
         , func{std::forward<F>(f)} {}
 
     connection conn;
@@ -897,12 +911,12 @@ private:
  * function to be called whenever the function call operator of its slot_base
  * base class is called.
  */
-template <typename Pmf, typename Ptr, typename... Args>
-class slot_pmf final : public slot_base<Args...> {
+template <typename Group, typename Pmf, typename Ptr, typename... Args>
+class slot_pmf final : public slot_base<Group, Args...> {
 public:
     template <typename F, typename P>
-    constexpr slot_pmf(cleanable &c, F && f, P && p, group_id gid)
-        : slot_base<Args...>(c, gid)
+    constexpr slot_pmf(cleanable<Group> &c, F && f, P && p, Group const& gid)
+        : slot_base<Group, Args...>(c, gid)
         , pmf{std::forward<F>(f)}
         , ptr{std::forward<P>(p)} {}
 
@@ -933,12 +947,12 @@ private:
 /*
  * Variation of slot that prepends a connection object to the callable
  */
-template <typename Pmf, typename Ptr, typename... Args>
-class slot_pmf_extended final : public slot_base<Args...> {
+template <typename Group, typename Pmf, typename Ptr, typename... Args>
+class slot_pmf_extended final : public slot_base<Group, Args...> {
 public:
     template <typename F, typename P>
-    constexpr slot_pmf_extended(cleanable &c, F && f, P && p, group_id gid)
-        : slot_base<Args...>(c, gid)
+    constexpr slot_pmf_extended(cleanable<Group> &c, F && f, P && p, Group const& gid)
+        : slot_base<Group, Args...>(c, gid)
         , pmf{std::forward<F>(f)}
         , ptr{std::forward<P>(p)} {}
 
@@ -972,12 +986,12 @@ private:
  * through a weak pointer in order to automatically disconnect the slot
  * on said object destruction.
  */
-template <typename Func, typename WeakPtr, typename... Args>
-class slot_tracked final : public slot_base<Args...> {
+template <typename Group, typename Func, typename WeakPtr, typename... Args>
+class slot_tracked final : public slot_base<Group, Args...> {
 public:
     template <typename F, typename P>
-    constexpr slot_tracked(cleanable &c, F && f, P && p, group_id gid)
-        : slot_base<Args...>(c, gid)
+    constexpr slot_tracked(cleanable<Group> &c, F && f, P && p, Group const& gid)
+        : slot_base<Group, Args...>(c, gid)
         , func{std::forward<F>(f)}
         , ptr{std::forward<P>(p)}
     {}
@@ -1022,12 +1036,12 @@ private:
  * the life of a supplied object through a weak pointer in order to automatically
  * disconnect the slot on said object destruction.
  */
-template <typename Pmf, typename WeakPtr, typename... Args>
-class slot_pmf_tracked final : public slot_base<Args...> {
+template <typename Group, typename Pmf, typename WeakPtr, typename... Args>
+class slot_pmf_tracked final : public slot_base<Group, Args...> {
 public:
     template <typename F, typename P>
-    constexpr slot_pmf_tracked(cleanable &c, F && f, P && p, group_id gid)
-        : slot_base<Args...>(c, gid)
+    constexpr slot_pmf_tracked(cleanable<Group> &c, F && f, P && p, Group const& gid)
+        : slot_base<Group, Args...>(c, gid)
         , pmf{std::forward<F>(f)}
         , ptr{std::forward<P>(p)}
     {}
@@ -1090,11 +1104,14 @@ private:
  * @tparam Lockable a lock type to decide the lock policy
  * @tparam T... the argument types of the emitting and slots functions.
  */
-template <typename Lockable, typename... T>
-class signal_base final : public detail::cleanable {
+template <GroupId Group, typename Lockable, typename... T>
+class signal_base final : public detail::cleanable<Group> {
+public:
+    using group_id = Group;
+
+private:
     template <typename L>
     using is_thread_safe = std::integral_constant<bool, !std::is_same<L, detail::null_mutex>::value>;
-
     template <typename U, typename L>
     using cow_type = std::conditional_t<is_thread_safe<L>::value,
                                         detail::copy_on_write<U>, U>;
@@ -1104,8 +1121,8 @@ class signal_base final : public detail::cleanable {
                                              detail::copy_on_write<U>, const U&>;
 
     using lock_type = std::unique_lock<Lockable>;
-    using slot_base = detail::slot_base<T...>;
-    using slot_ptr = detail::slot_ptr<T...>;
+    using slot_base = detail::slot_base<group_id, T...>;
+    using slot_ptr = detail::slot_ptr<Group, T...>;
     using slots_type = std::vector<slot_ptr>;
     struct group_type { slots_type slts; group_id gid; };
     using list_type = std::vector<group_type>;  // kept ordered by ascending gid
@@ -1181,8 +1198,8 @@ public:
      */
     template <typename Callable>
     requires trait::Callable<Callable, T...>
-    connection connect(Callable && c, group_id gid = 0) {
-        using slot_t = detail::slot<Callable, T...>;
+    connection connect(Callable && c, group_id gid = group_id{}) {
+        using slot_t = detail::slot<group_id, Callable, T...>;
         auto s = make_slot<slot_t>(std::forward<Callable>(c), gid);
         connection conn(s);
         add_slot(std::move(s));
@@ -1201,8 +1218,8 @@ public:
      */
     template <typename Callable>
     requires trait::Callable<Callable, connection&, T...>
-    connection connect_extended(Callable && c, group_id gid = 0) {
-        using slot_t = detail::slot_extended<Callable, T...>;
+    connection connect_extended(Callable && c, group_id gid = group_id{}) {
+        using slot_t = detail::slot_extended<group_id, Callable, T...>;
         auto s = make_slot<slot_t>(std::forward<Callable>(c), gid);
         connection conn(s);
         std::static_pointer_cast<slot_t>(s)->conn = conn;
@@ -1221,8 +1238,8 @@ public:
      */
     template <typename Pmf, trait::Observer Ptr>
     requires trait::MemberCallable<Pmf, Ptr, T...>
-    connection connect(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
-        using slot_t = detail::slot_pmf<Pmf, Ptr, T...>;
+    connection connect(Pmf && pmf, Ptr && ptr, group_id gid = group_id{}) {
+        using slot_t = detail::slot_pmf<group_id, Pmf, Ptr, T...>;
         auto s = make_slot<slot_t>(std::forward<Pmf>(pmf), std::forward<Ptr>(ptr), gid);
         connection conn(s);
         add_slot(std::move(s));
@@ -1241,8 +1258,8 @@ public:
     template <typename Pmf, typename Ptr>
     requires trait::MemberCallable<Pmf, Ptr, T...> &&
             (!trait::Observer<Ptr> && !trait::WeakPtrCompatible<Ptr>)
-    connection connect(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
-        using slot_t = detail::slot_pmf<Pmf, Ptr, T...>;
+    connection connect(Pmf && pmf, Ptr && ptr, group_id gid = group_id{}) {
+        using slot_t = detail::slot_pmf<group_id, Pmf, Ptr, T...>;
         auto s = make_slot<slot_t>(std::forward<Pmf>(pmf), std::forward<Ptr>(ptr), gid);
         connection conn(s);
         add_slot(std::move(s));
@@ -1260,8 +1277,8 @@ public:
     template <typename Pmf, typename Ptr>
     requires trait::MemberCallable<Pmf, Ptr, connection&, T...> &&
             (!trait::WeakPtrCompatible<Ptr>)
-    connection connect_extended(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
-        using slot_t = detail::slot_pmf_extended<Pmf, Ptr, T...>;
+    connection connect_extended(Pmf && pmf, Ptr && ptr, group_id gid = group_id{}) {
+        using slot_t = detail::slot_pmf_extended<group_id, Pmf, Ptr, T...>;
         auto s = make_slot<slot_t>(std::forward<Pmf>(pmf), std::forward<Ptr>(ptr), gid);
         connection conn(s);
         std::static_pointer_cast<slot_t>(s)->conn = conn;
@@ -1288,10 +1305,10 @@ public:
      */
     template <typename Pmf, trait::WeakPtrCompatible Ptr>
     requires (!trait::Callable<Pmf, T...>)
-    connection connect(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
+    connection connect(Pmf && pmf, Ptr && ptr, group_id gid = group_id{}) {
         using trait::to_weak;
         auto w = to_weak(std::forward<Ptr>(ptr));
-        using slot_t = detail::slot_pmf_tracked<Pmf, decltype(w), T...>;
+        using slot_t = detail::slot_pmf_tracked<group_id, Pmf, decltype(w), T...>;
         auto s = make_slot<slot_t>(std::forward<Pmf>(pmf), w, gid);
         connection conn(s);
         add_slot(std::move(s));
@@ -1317,10 +1334,10 @@ public:
      */
     template <typename Callable, trait::WeakPtrCompatible Trackable>
     requires trait::Callable<Callable, T...>
-    connection connect(Callable && c, Trackable && ptr, group_id gid = 0) {
+    connection connect(Callable && c, Trackable && ptr, group_id gid = group_id{}) {
         using trait::to_weak;
         auto w = to_weak(std::forward<Trackable>(ptr));
-        using slot_t = detail::slot_tracked<Callable, decltype(w), T...>;
+        using slot_t = detail::slot_tracked<group_id, Callable, decltype(w), T...>;
         auto s = make_slot<slot_t>(std::forward<Callable>(c), w, gid);
         connection conn(s);
         add_slot(std::move(s));
@@ -1473,10 +1490,10 @@ protected:
     /**
      * remove disconnected slots
      */
-    void clean(detail::slot_state *state) override {
+    void clean(detail::grouped_slot<Group> *state) override {
         lock_type lock(m_mutex);
         const auto idx = state->index();
-        const auto gid = state->group();
+        const auto& gid = state->group();
 
         // find the group
         for (auto &group : detail::cow_write(m_slots)) {
@@ -1510,7 +1527,7 @@ private:
 
     // add the slot to the list of slots of the right group
     void add_slot(slot_ptr &&s) {
-        const group_id gid = s->group();
+        const group_id& gid = s->group();
 
         lock_type lock(m_mutex);
         auto &groups = detail::cow_write(m_slots);
@@ -1575,9 +1592,9 @@ private:
  * @tparam Owner The owner type.
  * @tparam Args The signal args.
  */
-template <template<typename...> typename Sig, typename Owner, typename... Args>
+template <template<typename...> typename Sig, typename Owner, GroupId Group, typename... Args>
 class signal_interface final {
-    using signal_type = Sig<Args...>;
+    using signal_type = Sig<Group, Args...>;
     std::optional<signal_type> _sigStorage;
     signal_type* _sig;
     friend Owner;
@@ -1608,6 +1625,7 @@ class signal_interface final {
     ~signal_interface() = default;
 
 public:
+    using group_id = Group;
     signal_interface()
         : _sigStorage(std::in_place)
         , _sig(std::addressof(*_sigStorage))
@@ -1659,7 +1677,10 @@ public:
  * so this is not very useful.
  */
 template <typename... T>
-using signal_st = signal_base<detail::null_mutex, T...>;
+using signal_st = signal_base<int32_t, detail::null_mutex, T...>;
+
+template<GroupId Group, typename... T>
+using signal_g_st = signal_base<Group, detail::null_mutex, T...>;
 
 /**
  * Specialization of signal_base to be used in multi-threaded contexts.
@@ -1668,7 +1689,10 @@ using signal_st = signal_base<detail::null_mutex, T...>;
  * Recursive signal emission and emission cycles are supported too.
  */
 template <typename... T>
-using signal = signal_base<std::mutex, T...>;
+using signal = signal_base<int32_t, std::mutex, T...>;
+
+template<GroupId Group, typename... T>
+using signal_g = signal_base<int32_t, std::mutex, T...>;
 
 /**
  * @brief Specialization of signal_interface for single threaded signals.
@@ -1678,7 +1702,10 @@ using signal = signal_base<std::mutex, T...>;
  * @tparam T The arguments to the signal.
  */
 template<typename Owner, typename... T>
-using signal_ix_st = signal_interface<signal_st, Owner, T...>;
+using signal_ix_st = signal_interface<signal_g_st, Owner, int32_t, T...>;
+
+template<typename Owner, GroupId Group, typename... T>
+using signal_ix_g_st = signal_interface<signal_g_st, Owner, Group, T...>;
 
 /**
  * @brief Specialization of signal_interface for multi-threaded signals.
@@ -1688,6 +1715,8 @@ using signal_ix_st = signal_interface<signal_st, Owner, T...>;
  * @tparam T The arguments to the signal.
  */
 template<typename Owner, typename... T>
-using signal_ix = signal_interface<signal, Owner, T...>;
+using signal_ix = signal_interface<signal_g, Owner, int32_t, T...>;
 
+template<typename Owner, GroupId Group, typename... T>
+using signal_ix_g = signal_interface<signal_g, Owner, Group, T...>;
 } // namespace sigslot
