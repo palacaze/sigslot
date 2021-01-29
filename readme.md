@@ -6,7 +6,7 @@ Sigslot20 is a C++20 fork of [palacaze/sigslot](https://github.com/palacaze/sigs
 #### To-Do
 - [x] Replace SFINAE with C++20 concepts
 - [x] Add `signal_interface` class
-- [ ] Allow group type to be parameterized
+- [x] Allow group type to be parameterized
 - [ ] Allow blocking by group
 - [ ] Add new unit tests
 
