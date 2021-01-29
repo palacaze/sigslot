@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 
+
 struct s : ::sigslot::observer {
     ~s() override {
         this->disconnect_all();

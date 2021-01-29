@@ -5,7 +5,7 @@
 #include <cassert>
 #include <random>
 
-using res_container = std::vector<sigslot::group_id>;
+using res_container = std::vector<int32_t>;
 
 static constexpr size_t num_groups = 100;
 static constexpr size_t num_slots = 1000;
@@ -30,7 +30,7 @@ static void test_random_groups() {
 
     // create N groups with random ids
     std::uniform_int_distribution<int> dist(std::numeric_limits<int>::lowest());
-    std::array<sigslot::group_id, num_groups> gids;
+    std::array<int32_t, num_groups> gids;
     std::generate_n(gids.begin(), num_groups, [&] { return dist(gen); });
 
     // create

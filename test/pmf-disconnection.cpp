@@ -6,7 +6,6 @@
 
 // Test of complex disconnection of pointer to member function scenarii,
 // to ensure it copes well with any function type.
-
 static int sum = 0;
 
 struct b1 {
