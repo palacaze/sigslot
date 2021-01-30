@@ -63,8 +63,28 @@ static void test_disconnect_group() {
     assert(sum == 10);
 }
 
+static void test_block_group() {
+    int sum = 0;
+    sigslot::signal<int&> sig;
+    sig.connect(adder(3), 3);
+    sig.connect(adder(1), 1);
+    sig.connect(adder(2), 2);
+
+    sig(sum);
+    assert(sum == 6);
+
+    sig.block(3);
+    sig(sum);
+    assert(sum == 9);
+
+    sig.unblock(3);
+    sig(sum);
+    assert(sum == 15);
+}
+
 int main() {
     test_random_groups();
     test_disconnect_group();
+    test_block_group();
     return 0;
 }
