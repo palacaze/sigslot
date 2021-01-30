@@ -1108,16 +1108,15 @@ template <GroupId Group, typename Lockable, typename... T>
 class signal_base final : public detail::cleanable<Group> {
 public:
     using group_id = Group;
+    static constexpr bool is_thread_safe = !std::same_as<Lockable, detail::null_mutex>;
 
 private:
-    template <typename L>
-    using is_thread_safe = std::integral_constant<bool, !std::is_same<L, detail::null_mutex>::value>;
-    template <typename U, typename L>
-    using cow_type = std::conditional_t<is_thread_safe<L>::value,
+    template <typename U>
+    using cow_type = std::conditional_t<is_thread_safe,
                                         detail::copy_on_write<U>, U>;
 
-    template <typename U, typename L>
-    using cow_copy_type = std::conditional_t<is_thread_safe<L>::value,
+    template <typename U>
+    using cow_copy_type = std::conditional_t<is_thread_safe,
                                              detail::copy_on_write<U>, const U&>;
 
     using lock_type = std::unique_lock<Lockable>;
@@ -1176,7 +1175,7 @@ public:
 
         // Reference to the slots to execute them out of the lock
         // a copy may occur if another thread writes to it.
-        cow_copy_type<list_type, Lockable> ref = slots_reference();
+        cow_copy_type<list_type> ref = slots_reference();
 
         for (const auto &group : detail::cow_read(ref)) {
             for (const auto &s : group.slts) {
@@ -1508,7 +1507,7 @@ public:
      * Safety: thread safe
      */
     size_t slot_count() noexcept {
-        cow_copy_type<list_type, Lockable> ref = slots_reference();
+        cow_copy_type<list_type> ref = slots_reference();
         size_t count = 0;
         for (const auto &g : detail::cow_read(ref)) {
             count += g.slts.size();
@@ -1544,7 +1543,7 @@ protected:
 
 private:
     // used to get a reference to the slots for reading
-    inline cow_copy_type<list_type, Lockable> slots_reference() {
+    inline cow_copy_type<list_type> slots_reference() {
         lock_type lock(m_mutex);
         return m_slots;
     }
@@ -1611,7 +1610,7 @@ private:
 
 private:
     Lockable m_mutex;
-    cow_type<list_type, Lockable> m_slots;
+    cow_type<list_type> m_slots;
     std::atomic<bool> m_block;
 };
 
