@@ -1466,7 +1466,7 @@ public:
         for (auto &group : detail::cow_write(m_slots)) {
             if(group.gid == gid) {
                 for (auto& slt : group.slts) {
-                    slt.block();            
+                    slt->block();            
                 }
             }
         }
@@ -1489,7 +1489,7 @@ public:
         for (auto &group : detail::cow_write(m_slots)) {
             if(group.gid == gid) {
                 for (auto& slt : group.slts) {
-                    slt.unblock();            
+                    slt->unblock();            
                 }
             }
         }
