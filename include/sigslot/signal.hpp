@@ -1657,8 +1657,31 @@ class signal_interface final {
         return _sig->blocked();
         }
 
-    signal_interface(signal_interface&&) /* not noexcept */ = default;
-    signal_interface& operator=(signal_interface&&) /* not noexcept */ = default;
+    signal_interface(signal_interface&& o) /* not noexcept */ {
+        if(o._sigStorage.has_value()) {
+            _sigStorage = std::move(o._sigStorage);
+            _sig = std::addressof(*_sigStorage);
+            o._sig = nullptr;
+        }
+        else {
+            std::swap(_sig, o._sig);
+        }
+    }
+
+    signal_interface& operator=(signal_interface&& o) /* not noexcept */ {
+        if(_sig != o._sig) {
+            if(o._sigStorage.has_value()) {
+            _sigStorage = std::move(o._sigStorage);
+            _sig = std::addressof(*_sigStorage);
+            o._sig = nullptr;
+            }
+            else {
+            std::swap(_sig, o._sig);
+            }
+        }
+        return *this;
+    }
+
     ~signal_interface() = default;
 
 public:
