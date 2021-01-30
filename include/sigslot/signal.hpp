@@ -1630,31 +1630,31 @@ class signal_interface final {
     friend Owner;
 
     template <typename... U>
-    void operator()(U&& ... args) {
+    inline void operator()(U&& ... args) {
         (*_sig)(std::forward<U>(args)...);
         }
 
-    size_t slot_count() noexcept {
+    inline size_t slot_count() noexcept {
         return _sig->slot_count();
         }
 
-    void block() noexcept {
+    inline void block() noexcept {
         _sig->block();
         }
 
-    void block(Group const& gid) {
+    inline void block(Group const& gid) {
         _sig->block(gid);
     }
 
-    void unblock(Group const& gid) {
+    inline void unblock(Group const& gid) {
         _sig->unblock(gid);
     }
 
-    void unblock() noexcept {
+    inline void unblock() noexcept {
         _sig->unblock();
         }
 
-    bool blocked() const noexcept {
+    inline bool blocked() const noexcept {
         return _sig->blocked();
         }
 
@@ -1681,29 +1681,29 @@ public:
 
     template <typename... Ts>
     requires detail::ConnectCallable<signal_type, Ts...>
-    connection connect(Ts&& ... args) {
+    inline connection connect(Ts&& ... args) {
         return _sig->connect(std::forward<Ts>(args)...);
         }
 
     template <typename... Ts>
     requires detail::ConnectExtendedCallable<signal_type, Ts...>
-    connection connect_extended(Ts&& ... args) {
+    inline connection connect_extended(Ts&& ... args) {
         return _sig->connect_extended(std::forward<Ts>(args)...);
         }
 
     template <typename... Ts>
     requires detail::ConnectCallable<signal_type, Ts...>
-    scoped_connection connect_scoped(Ts&& ... args) {
+    inline scoped_connection connect_scoped(Ts&& ... args) {
         return _sig->connect(std::forward<Ts>(args)...);
         }
 
     template <typename... Ts>
     requires detail::DisconnectCallable<signal_type, Ts...>
-    size_t disconnect(Ts&& ... args) {
+    inline size_t disconnect(Ts&& ... args) {
         return _sig->disconnect(std::forward<Ts>(args)...);
         }
 
-    void disconnect_all() {
+    inline void disconnect_all() {
         _sig->disconnect_all();
         }
 };
