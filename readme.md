@@ -7,11 +7,14 @@ Sigslot20 is a C++20 fork of [palacaze/sigslot](https://github.com/palacaze/sigs
 - [x] Replace SFINAE with C++20 concepts
 - [x] Add `signal_interface` class
 - [x] Allow group type to be parameterized
-- [ ] Allow blocking by group
-- [ ] Add new unit tests
+- [x] Allow blocking by group
+- [x] Add new unit tests
 
 ## In This Readme
 * [Differences from palacaze/sigslot](#differences-from-sigslot)
+    * [Signal Interface](#signal-interface)
+    * [Custom group type](#custom-group-type)
+    * [Block/unblock by group](#block-and-unblock-by-group)
 * [Features](#features)
 * [Installation](#installation)
 * [Documentation](#documentation)
@@ -33,36 +36,106 @@ Sigslot20 is a C++20 fork of [palacaze/sigslot](https://github.com/palacaze/sigs
 
 
 ## Differences from sigslot
-Sigslot20 takes advantage of some C++20 features, such as concepts. It also adds a new class, `signal_interface`, which wraps a signal and provides access control to a template friend. This is useful for UI classes, which can expose a public member `signal_interface` that can only be called or blocked from within the class. Two type aliases are provided for convenience: `signal_ix_st` (which wraps a `signal_st`) and `signal_ix` (which wraps a `signal`).
 
-`signal_interface` example:
+Sigslot20 takes advantage of some C++20 features, such as concepts. There are also a couple of new
+or changed features in the library.
+
+### Signal Interface
+
+Sigslot20 adds a new class, `signal_interface`, which wraps a signal and provides access control to a
+template friend. This is useful for UI classes, which can expose a public member `signal_interface`
+that can only be called or blocked from within the class. Two type aliases are provided for
+convenience: `signal_ix_st` (which wraps a `signal_st`) and `signal_ix` (which wraps a `signal`).
+
+Example:
 ```c++
 #include <sigslot/signal.hpp>
 
 class sig_owner {
     sigslot::signal<float> _privateSig;
 public:
-    sigslot::signal_ix<sig_owner, int> IntSignal; //signals can use their own internal signal object
+    sigslot::signal_ix<sig_owner, int> IntSignal; // signals can use their own internal signal object
     sigslot::signal_ix<sig_owner, flot> FloatSignal;
-    sig_owner() : FloatSignal(&_privateSig) { }   //or take a pointer to an existing signal
+    sig_owner() : FloatSignal(&_privateSig) { }   // or take a pointer to an existing signal
     
     void do_stuff() {
-        FloatSignal(3.0f); //can access private call operator and blocking function from here
+        FloatSignal(3.0f); // can access private call operator and blocking function from here
     }
 };
 
 void foo() {
     sig_owner o;
     
-    //functions outside sig_owner can connect and disconnect
+    // functions outside sig_owner can connect and disconnect
     o.IntSignal.connect([](int) {
-        //do stuff
+        // do stuff
     });
     o.IntSignal.disconnect(3);
     
-    //but can't access the private call operators or blocking functions
+    // but can't access the private call operators or blocking functions
     //o.IntSignal(5);
     //o.IntSignal.block();
+}
+```
+
+### Custom group type
+
+In Sigslot20, the group type used to organize slots is customizable. In order for a type `T` to be
+considered a valid group type, it must be default constructible, copy constructible, and the expressions
+`t1 == t2` and `t1 < t2` (Where `t1` and `t2` are objects of type `T`) must be valid and the result
+must be convertible to `bool`.
+
+The default type for signal groups is `int32_t`. A signal's group type can be customized using the
+appropriate template alias: `signal_g` and `signal_g_st` for signals, and `signal_ix_g` and
+`signal_ix_g_st` for signal interfaces.
+
+Example:
+```c++
+#include <sigslot/signal.hpp>
+
+// signal grouped by char
+// takes a bool as an argument
+sigslot::signal_g<char, bool> sig1;
+
+struct foo {
+    // signal interface grouped by a custom type
+    // takes an int and a string as arguments
+    sigslot::signal_ix_g<foo, my_custom_type, int, std::string> Sig2;
+};
+```
+
+### Block and unblock by group
+
+Signals can now be blocked and unblocked by group from the signal object. For signal interfaces, this is
+only available to the owning class.
+
+Example:
+```c++
+#include <sigslot/signal.hpp>
+
+int main() {
+    sigslot::signal<int> sig;
+    int sum;
+
+    sig.connect([&](int v) {
+        sum += v;
+    }, 1);
+    sig.connect([](int v) {
+        sum += v * 2;
+    }, 2);
+
+    sum = 0;
+    sig.block(2);
+
+    // group 2 now blocked, sum will be set to 3
+    sig(3);
+
+    sum = 0;
+    sig.unblock(2);
+
+    // group 2 now unblocked, sum will be set to 9
+    sig(3);
+
 }
 ```
 
@@ -79,7 +152,6 @@ Apart from the usual features, it offers
 - Reasonable performance. and a simple and straightforward implementation.
 
 Sigslot20 is unit-tested and should be reliable and stable enough to replace Boost Signals2.
-*note: `signal_interface` is not yet unit-tested as of right now.*
 
 The tests run cleanly under the address, thread and undefined behaviour sanitizers.
 
@@ -100,6 +172,7 @@ be updated.* I'm not the most adept with CMake, but I will try to update it as I
 as issues/PRs come in.
 
 Currently I've tested Sigslot20 with Clang 11 on Mingw 64.
+Github Actions have been set up to test on GCC 10.2.0 and Clang 10.0.0 (Linux) and clang-cl (Windows).
 
 Be aware of a potential gotcha on Windows with MSVC and Clang-Cl compilers,
 which may need the `/OPT:NOICF` linker flags in exceptional situations. Read The
