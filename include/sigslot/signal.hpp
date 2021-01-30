@@ -1459,11 +1459,41 @@ public:
     }
 
     /**
+     * Blocks all slots in a given group
+     * Safety: thread safe
+     */
+    void block(group_id const& gid) {
+        lock_type lock(m_mutex);
+        for (auto &group : detail::cow_write(m_slots)) {
+            if(group.gid == gid) {
+                for (auto& slt : group.slts) {
+                    slt.block();            
+                }
+            }
+        }
+    }
+
+    /**
      * Unblocks signal emission
      * Safety: thread safe
      */
     void unblock() noexcept {
         m_block.store(false);
+    }
+
+    /**
+     * Unblocks all slots in a given group
+     * Safety: thread safe
+     */
+    void unblock(group_id const& gid) {
+        lock_type lock(m_mutex);
+        for (auto &group : detail::cow_write(m_slots)) {
+            if(group.gid == gid) {
+                for (auto& slt : group.slts) {
+                    slt.unblock();            
+                }
+            }
+        }
     }
 
     /**
@@ -1611,6 +1641,14 @@ class signal_interface final {
     void block() noexcept {
         _sig->block();
         }
+
+    void block(Group const& gid) {
+        _sig->block(gid);
+    }
+
+    void unblock(Group const& gid) {
+        _sig->unblock(gid);
+    }
 
     void unblock() noexcept {
         _sig->unblock();
