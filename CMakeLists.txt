@@ -1,9 +1,8 @@
 cmake_minimum_required(VERSION 3.5)
-list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
 project(pal_sigslot VERSION 1.2.0 LANGUAGES CXX)
 
-include(SigslotUtils)
+include(cmake/SigslotUtils.cmake)
 
 ### options
 option(SIGSLOT_COMPILE_EXAMPLES "Compile optional exemples" ON)
