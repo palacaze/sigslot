@@ -91,5 +91,6 @@ if(SIGSLOT_COMPILE_EXAMPLES)
 endif()
 
 if(SIGSLOT_COMPILE_TESTS)
+    enable_testing()
     add_subdirectory(test)
 endif()
