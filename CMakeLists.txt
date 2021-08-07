@@ -11,7 +11,7 @@ endif()
 include(cmake/SigslotUtils.cmake)
 
 ### options
-option(SIGSLOT_COMPILE_EXAMPLES "Compile optional exemples" ${SIGSLOT_MAIN_PROJECT})
+option(SIGSLOT_COMPILE_EXAMPLES "Compile optional examples" ${SIGSLOT_MAIN_PROJECT})
 option(SIGSLOT_COMPILE_TESTS "Compile tests" ${SIGSLOT_MAIN_PROJECT})
 option(SIGSLOT_REDUCE_COMPILE_TIME "Attempt at reducing code size and compilation time" OFF)
 option(SIGSLOT_ENABLE_INSTALL "Create install target" ${SIGSLOT_MAIN_PROJECT})
