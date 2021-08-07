@@ -1,0 +1,12 @@
+# Allow in source build
+[Bb]uild*/
+# Ignore qt creator generated CMakeLists.txt.users
+*.users
+# Ignore CLion project files
+*.idea
+# Ignore CLion default generated build folder
+cmake-build*/
+# For macOs users
+.DS_Store
+# Ignore sublime merge file that can be created on merge fail
+Sublimerge*
