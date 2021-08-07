@@ -15,6 +15,7 @@ file(GLOB_RECURSE UNIT_TESTS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*.cpp")
 foreach(ut IN LISTS UNIT_TESTS)
     string(REPLACE ".cpp" "" target ${ut})
     string(REGEX REPLACE "/" "." target ${target})
+    set(target sigslot-test-${target})
 
     if (target MATCHES "boost")
         if (TARGET Boost::system)
