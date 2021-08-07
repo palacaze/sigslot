@@ -2,11 +2,17 @@ cmake_minimum_required(VERSION 3.5)
 
 project(pal_sigslot VERSION 1.2.0 LANGUAGES CXX)
 
+### main project
+set(SIGSLOT_MAIN_PROJECT OFF)
+if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+  set(SIGSLOT_MAIN_PROJECT ON)
+endif()
+
 include(cmake/SigslotUtils.cmake)
 
 ### options
-option(SIGSLOT_COMPILE_EXAMPLES "Compile optional exemples" ON)
-option(SIGSLOT_COMPILE_TESTS "Compile tests" ON)
+option(SIGSLOT_COMPILE_EXAMPLES "Compile optional exemples" ${SIGSLOT_MAIN_PROJECT})
+option(SIGSLOT_COMPILE_TESTS "Compile tests" ${SIGSLOT_MAIN_PROJECT})
 option(SIGSLOT_REDUCE_COMPILE_TIME "Attempt at reducing code size and compilation time" OFF)
 
 find_package(Threads REQUIRED)
