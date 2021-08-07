@@ -65,6 +65,24 @@ cmake --build . --target examples
 cmake --build . --target tests
 ```
 
+### CMake FetchContent
+
+`Pal::Sigslot` can also be integrated using the [FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html) method.
+
+```cmake
+include(FetchContent)
+
+FetchContent_Declare(
+  sigslot
+  GIT_REPOSITORY https://github.com/palacaze/sigslot
+  GIT_TAG        19a6f0f5ea11fc121fe67f81fd5e491f2d7a4637 # v1.2.0
+)
+FetchContent_MakeAvailable(sigslot)
+
+add_executable(MyExe main.cpp)
+target_link_libraries(MyExe PRIVATE Pal::Sigslot)
+```
+
 ## Documentation
 
 Sigslot implements the signal-slot construct popular in UI frameworks, making it
