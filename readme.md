@@ -59,10 +59,28 @@ cmake .. -DSIGSLOT_REDUCE_COMPILE_TIME=ON -DCMAKE_INSTALL_PREFIX=~/local
 cmake --build . --target install
 
 # If you want to compile examples:
-cmake --build . --target examples
+cmake --build . --target sigslot-examples
 
 # And compile/execute unit tests:
-cmake --build . --target tests
+cmake --build . --target sigslot-tests
+```
+
+### CMake FetchContent
+
+`Pal::Sigslot` can also be integrated using the [FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html) method.
+
+```cmake
+include(FetchContent)
+
+FetchContent_Declare(
+  sigslot
+  GIT_REPOSITORY https://github.com/palacaze/sigslot
+  GIT_TAG        19a6f0f5ea11fc121fe67f81fd5e491f2d7a4637 # v1.2.0
+)
+FetchContent_MakeAvailable(sigslot)
+
+add_executable(MyExe main.cpp)
+target_link_libraries(MyExe PRIVATE Pal::Sigslot)
 ```
 
 ## Documentation

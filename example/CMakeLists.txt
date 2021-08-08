@@ -1,11 +1,11 @@
-add_custom_target(examples COMMENT "Build all the examples.")
+add_custom_target(sigslot-examples COMMENT "Build all the examples.")
 
 macro(pal_create_example target ut)
     add_executable(${target} EXCLUDE_FROM_ALL "${ut}")
     target_link_libraries(${target} PRIVATE Pal::Sigslot)
     target_compile_options(${target} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj>)
     target_compile_definitions(${target} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:_SCL_SECURE_NO_WARNINGS>)
-    add_dependencies(examples ${target})
+    add_dependencies(sigslot-examples ${target})
     sigslot_set_properties(${target} PRIVATE)
 endmacro()
 
@@ -13,6 +13,7 @@ file(GLOB_RECURSE UNIT_TESTS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*.cpp")
 foreach(ex IN LISTS UNIT_TESTS)
     string(REPLACE ".cpp" "" target ${ex})
     string(REGEX REPLACE "/" "." target ${target})
+    set(target sigslot-example-${target})
 
     if (target MATCHES "boost")
         if (TARGET Boost::system)

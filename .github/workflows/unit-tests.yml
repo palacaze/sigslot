@@ -1,0 +1,55 @@
+name: ✅ Unit Tests
+
+on:
+  push:
+    branches:
+      - master
+      - main
+      - ci
+
+  pull_request:
+    branches:
+      - master
+      - main
+
+jobs:
+  Test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        qt-version: ['5.15.2']
+        build_type: ['Debug', 'Release']
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v2
+      -
+        name: 📦 Cache Qt
+        id: cache-qt
+        uses: actions/cache@v2
+        with:
+          path: ${{ github.workspace }}/Qt-${{ runner.os }}-${{ matrix.qt-version }}
+          key: ${{ runner.os }}-QtCache-${{ matrix.qt-version }}
+      -
+        name: ⬇ Install Qt
+        uses: jurplel/install-qt-action@v2
+        with:
+          version: ${{ matrix.qt-version }}
+          dir: ${{ github.workspace }}/Qt-${{ runner.os }}-${{ matrix.qt-version }}
+          cached: ${{ steps.cache-qt.outputs.cache-hit }}
+      -
+        name: 🔧 sigslot
+        run: |
+          cmake -E make_directory build
+          cmake                                              \
+            -DCMAKE_BUILD_TYPE="${{ matrix.build_type }}"    \
+            -DSIGSLOT_COMPILE_TESTS=ON                       \
+            -DSIGSLOT_COMPILE_EXAMPLES=ON                    \
+            -B build -S .
+        shell: bash
+      -
+        name: 🔨 sigslot-examples
+        run: cmake --build build --target sigslot-examples --config "${{ matrix.build_type }}"
+      -
+        name: 🔨 sigslot-tests
+        run: cmake --build build --target sigslot-tests --config "${{ matrix.build_type }}"
