@@ -53,6 +53,3 @@ jobs:
       -
         name: 🔨 sigslot-tests
         run: cmake --build build --target sigslot-tests --config "${{ matrix.build_type }}" -j $(nproc)
-      -
-        name: ✅ Unit Tests
-        run: cd build && ctest --build-config "${{ matrix.build_type }}" --progress --verbose
