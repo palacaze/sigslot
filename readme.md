@@ -59,10 +59,10 @@ cmake .. -DSIGSLOT_REDUCE_COMPILE_TIME=ON -DCMAKE_INSTALL_PREFIX=~/local
 cmake --build . --target install
 
 # If you want to compile examples:
-cmake --build . --target examples
+cmake --build . --target sigslot-examples
 
 # And compile/execute unit tests:
-cmake --build . --target tests
+cmake --build . --target sigslot-tests
 ```
 
 ### CMake FetchContent

@@ -1,11 +1,11 @@
-add_custom_target(tests
+add_custom_target(sigslot-tests
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
     COMMENT "Build and run all the unit tests.")
 
 macro(pal_create_test target ut)
     add_executable(${target} EXCLUDE_FROM_ALL "${ut}")
     add_test(${target} ${target})
-    add_dependencies(tests ${target})
+    add_dependencies(sigslot-tests ${target})
     sigslot_set_properties(${target} PRIVATE)
     target_link_libraries(${target} PRIVATE Pal::Sigslot)
     target_compile_definitions(${target} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:_SCL_SECURE_NO_WARNINGS>)

@@ -49,10 +49,10 @@ jobs:
         shell: bash
       -
         name: 🔨 sigslot-examples
-        run: cmake --build build --target examples --config "${{ matrix.build_type }}" -j $(nproc)
+        run: cmake --build build --target sigslot-examples --config "${{ matrix.build_type }}" -j $(nproc)
       -
         name: 🔨 sigslot-tests
-        run: cmake --build build --target tests --config "${{ matrix.build_type }}" -j $(nproc)
+        run: cmake --build build --target sigslot-tests --config "${{ matrix.build_type }}" -j $(nproc)
       -
         name: ✅ Unit Tests
         run: cd build && ctest --build-config "${{ matrix.build_type }}" --progress --verbose
