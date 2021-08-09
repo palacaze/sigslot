@@ -499,13 +499,13 @@ int main() {
         // Lifetime of object instance p is tracked
         s p;
         s_mt pm;
-        sig.connect(&s::f, p);
-        sig.connect(&s_mt::f, pm);
+        sig.connect(&s::f, &p);
+        sig.connect(&s_mt::f, &pm);
         sig(1);     // sum == 2
     }
     
     // The slots got disconnected at instance destruction
-    sig(1);         // sum == 1
+    sig(1);         // sum == 2
 }
 ```
 
