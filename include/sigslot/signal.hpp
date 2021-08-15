@@ -9,8 +9,12 @@
 
 #if defined __clang__ || (__GNUC__ > 5)
 #define SIGSLOT_MAY_ALIAS __attribute__((__may_alias__))
+#define SIGSLOT_LIKELY(expr) __builtin_expect(!!(expr), 1)
+#define SIGSLOT_UNLIKELY(expr) __builtin_expect(!!(expr), 0)
 #else
 #define SIGSLOT_MAY_ALIAS
+#define SIGSLOT_LIKELY(expr) (expr)
+#define SIGSLOT_UNLIKELY(expr) (expr)
 #endif
 
 #if defined(__GXX_RTTI) || defined(__cpp_rtti) || defined(_CPPRTTI)
@@ -369,6 +373,7 @@ private:
     std::atomic<bool> state {true};
 };
 
+
 /**
  * A simple copy on write container that will be used to improve slot lists
  * access efficiency in a multithreaded context.
@@ -512,32 +517,48 @@ public:
 
     virtual ~slot_state() = default;
 
-    virtual bool connected() const noexcept { return m_connected; }
+    virtual bool connected() const noexcept {
+        return m_connected.load(std::memory_order_acquire);
+    }
 
     bool disconnect() noexcept {
-        bool ret = m_connected.exchange(false);
+        bool ret = mark_disconnected();
         if (ret) {
-            do_disconnect();
+            disconnect_slot();
         }
         return ret;
     }
 
-    bool blocked() const noexcept { return m_blocked.load(); }
-    void block()   noexcept { m_blocked.store(true); }
-    void unblock() noexcept { m_blocked.store(false); }
+    bool mark_disconnected() noexcept {
+        return m_connected.exchange(false, std::memory_order_release);
+    }
+
+    virtual void wait_disconnected() noexcept = 0;
+
+    bool blocked() const noexcept {
+        return m_blocked.load(std::memory_order_acquire);
+    }
+
+    void block() noexcept {
+        m_blocked.store(true, std::memory_order_release);
+    }
+
+    void unblock() noexcept {
+        m_blocked.store(false, std::memory_order_release);
+    }
 
 protected:
-    virtual void do_disconnect() {}
+    virtual void disconnect_slot() noexcept = 0;
 
-    auto index() const {
+    auto index() const noexcept {
         return m_index;
     }
 
-    auto& index() {
+    auto& index() noexcept {
         return m_index;
     }
 
-    group_id group() const {
+    group_id group() const noexcept {
         return m_group;
     }
 
@@ -613,7 +634,7 @@ public:
     connection & operator=(connection &&) noexcept = default;
 
     bool valid() const noexcept {
-        return !m_state.expired();
+        return connected();
     }
 
     bool connected() const noexcept {
@@ -621,9 +642,31 @@ public:
         return d && d->connected();
     }
 
-    bool disconnect() noexcept {
-        auto d = m_state.lock();
-        return d && d->disconnect();
+    /**
+     * Disconnect the slot.
+     *
+     * The slot will not be invoked anymore after disconnection.
+     *
+     * This function can optionally wait for all ongoing invocations of the
+     * slot's callable to be finished before returning. This can be used for
+     * safe lifetime management of callables in multithreaded applications.
+     * This ensures the underlying callable of the slot is not used anymore.
+     *
+     * If the wait parameter is false, the method is non-blocking, and does
+     * not ensure that all ongoing slots invocations have finished yet.
+     *
+     * @param wait Wait for all slot invocations to be finished
+     * @return true if the slot was connected before to the call
+     */
+    bool disconnect(bool wait = false) noexcept {
+        if (auto d = m_state.lock()) {
+            auto r = d->disconnect();
+            if (wait) {
+                d->wait_disconnected();
+            }
+            return r;
+        }
+        return false;
     }
 
     bool blocked() const noexcept {
@@ -658,14 +701,16 @@ protected:
 };
 
 /**
- * scoped_connection is a RAII version of connection
- * It disconnects the slot from the signal upon destruction.
+ * scoped_connection is a RAII version of connection.
+ *
+ * It disconnects the slot from the signal upon destruction and waits for
+ * all invocations to be finished with a call to `disconnect(true)`.
  */
 class scoped_connection final : public connection {
 public:
     scoped_connection() = default;
     ~scoped_connection() override {
-        disconnect();
+        disconnect(true);
     }
 
     /*implicit*/ scoped_connection(const connection &c) noexcept : connection(c) {}
@@ -679,7 +724,7 @@ public:
     {}
 
     scoped_connection & operator=(scoped_connection && o) noexcept {
-        disconnect();
+        disconnect(true);
         m_state.swap(o.m_state);
         return *this;
     }
@@ -745,7 +790,7 @@ namespace detail {
 // interface for cleanable objects, used to cleanup disconnected slots
 struct cleanable {
     virtual ~cleanable() = default;
-    virtual void clean(slot_state *) = 0;
+    virtual void clean() noexcept = 0;
 };
 
 template <typename...>
@@ -766,9 +811,15 @@ public:
 
     explicit slot_base(cleanable &c, group_id gid)
         : slot_state(gid)
+        , counter(0)
+        , waited(false)
         , cleaner(c)
+
     {}
-    ~slot_base() override = default;
+    ~slot_base() override {
+        disconnect();
+        wait_disconnected();
+    }
 
     // method effectively responsible for calling the "slot" function with
     // supplied arguments whenever emission happens.
@@ -776,9 +827,7 @@ public:
 
     template <typename... U>
     void operator()(U && ...u) {
-        if (slot_state::connected() && !slot_state::blocked()) {
-            call_slot(std::forward<U>(u)...);
-        }
+        call_slot(std::forward<U>(u)...);
     }
 
     // check if we are storing callable c
@@ -807,9 +856,44 @@ public:
         return get_object() == get_object_ptr(o);
     }
 
+    void wait_disconnected() noexcept final {
+        if (!waited.test_and_set()) {
+            while (counter.load(std::memory_order_acquire) > 0) {
+                std::this_thread::yield();
+            }
+        }
+    }
+
 protected:
-    void do_disconnect() final {
-        cleaner.clean(this);
+    friend struct call_locker;
+
+    // A reference counting lock to count invocations of the actual slot
+    struct call_locker {
+        explicit call_locker(slot_base<Args...> &sbase) noexcept
+            : sb{sbase}
+        {
+            sb.counter.fetch_add(1, std::memory_order_acquire);
+        }
+
+        ~call_locker() noexcept {
+            sb.counter.fetch_sub(1, std::memory_order_release);
+        }
+
+        // the slot can be called only if this succeeds
+        inline explicit operator bool() const noexcept {
+            return sb.connected() && !sb.blocked();
+        }
+
+    private:
+        slot_base<Args...> &sb;
+    };
+
+    auto call_lock() noexcept {
+        return call_locker(*this);
+    }
+
+    virtual void disconnect_slot() noexcept {
+        cleaner.clean();
     }
 
     // retieve a pointer to the object embedded in the slot
@@ -842,6 +926,8 @@ private:
 #endif
 
 private:
+    std::atomic<int> counter;
+    std::atomic_flag waited;
     cleanable &cleaner;
 };
 
@@ -855,11 +941,14 @@ public:
     template <typename F, typename Gid>
     constexpr slot(cleanable &c, F && f, Gid gid)
         : slot_base<Args...>(c, gid)
-        , func{std::forward<F>(f)} {}
+        , func{std::forward<F>(f)}
+    {}
 
-protected:
+protected:    
     void call_slot(Args ...args) override {
-        func(args...);
+        if (auto _ = this->call_lock()) {
+            func(args...);
+        }
     }
 
     func_ptr get_callable() const noexcept override {
@@ -891,7 +980,9 @@ public:
 
 protected:
     void call_slot(Args ...args) override {
-        func(conn, args...);
+        if (auto _ = this->call_lock()) {
+            func(conn, args...);
+        }
     }
 
     func_ptr get_callable() const noexcept override {
@@ -924,7 +1015,9 @@ public:
 
 protected:
     void call_slot(Args ...args) override {
-        ((*ptr).*pmf)(args...);
+        if (auto _ = this->call_lock()) {
+            ((*ptr).*pmf)(args...);
+        }
     }
 
     func_ptr get_callable() const noexcept override {
@@ -962,7 +1055,9 @@ public:
 
 protected:
     void call_slot(Args ...args) override {
-        ((*ptr).*pmf)(conn, args...);
+        if (auto _ = this->call_lock()) {
+            ((*ptr).*pmf)(conn, args...);
+        }
     }
 
     func_ptr get_callable() const noexcept override {
@@ -1009,7 +1104,7 @@ protected:
             slot_state::disconnect();
             return;
         }
-        if (slot_state::connected()) {
+        if (auto _ = this->call_lock()) {
             func(args...);
         }
     }
@@ -1059,7 +1154,7 @@ protected:
             slot_state::disconnect();
             return;
         }
-        if (slot_state::connected()) {
+        if (auto _ = this->call_lock()) {
             ((*sp).*pmf)(args...);
         }
     }
@@ -1130,7 +1225,11 @@ public:
     using arg_list = trait::typelist<T...>;
     using ext_arg_list = trait::typelist<connection&, T...>;
 
-    signal_base() noexcept : m_block(false) {}
+    signal_base() noexcept
+        : m_block{false}
+        , m_some_disconnected{false}
+    {}
+
     ~signal_base() override {
         disconnect_all();
     }
@@ -1140,6 +1239,7 @@ public:
 
     signal_base(signal_base && o) /* not noexcept */
         : m_block{o.m_block.load()}
+        , m_some_disconnected{o.m_some_disconnected.load()}
     {
         lock_type lock(o.m_mutex);
         using std::swap;
@@ -1154,6 +1254,7 @@ public:
         using std::swap;
         swap(m_slots, o.m_slots);
         m_block.store(o.m_block.exchange(m_block.load()));
+        m_some_disconnected.store(o.m_some_disconnected.exchange(m_some_disconnected.load()));
         return *this;
     }
 
@@ -1359,7 +1460,7 @@ public:
     }
 
     /**
-     * Disconnect slots bound to a callable
+     * Disconnect slots bound to a callable.
      *
      * Effect: Disconnects all the slots bound to the callable in argument.
      * Safety: Thread-safety depends on locking policy.
@@ -1439,6 +1540,9 @@ public:
         for (auto &group : detail::cow_write(m_slots)) {
             if (group.gid == gid) {
                 size_t count = group.slts.size();
+                for (auto &slt : group.slts) {
+                    disconnect_slot(slt);
+                }
                 group.slts.clear();
                 return count;
             }
@@ -1452,7 +1556,15 @@ public:
      */
     void disconnect_all() {
         lock_type lock(m_mutex);
-        clear();
+        auto &groups = detail::cow_write(m_slots);
+
+        for (auto &group : groups) {
+            for (auto &slt : group.slts) {
+                disconnect_slot(slt);
+            }
+            group.slts.clear();
+        }
+        groups.clear();
     }
 
     /**
@@ -1492,35 +1604,26 @@ public:
     }
 
 protected:
-    /**
-     * remove disconnected slots
+    /* Asynchronously declare at least one slot as disconnected,
+     * which will trigger actual destruction of the slot at a later time
      */
-    void clean(detail::slot_state *state) override {
-        lock_type lock(m_mutex);
-        const auto idx = state->index();
-        const auto gid = state->group();
-
-        // find the group
-        for (auto &group : detail::cow_write(m_slots)) {
-            if (group.gid == gid) {
-                auto &slts = group.slts;
-
-                // ensure we have the right slot, in case of concurrent cleaning
-                if (idx < slts.size() && slts[idx] && slts[idx].get() == state) {
-                    std::swap(slts[idx], slts.back());
-                    slts[idx]->index() = idx;
-                    slts.pop_back();
-                }
-
-                return;
-            }
-        }
+    void clean() noexcept override {
+        m_some_disconnected.store(true, std::memory_order_release);
     }
 
 private:
+    // to be called under lock: remove disconnected slots
+    void remove_disconnected(lock_type &lock) {
+        m_some_disconnected.store(false, std::memory_order_release);
+        disconnect_if(lock, [] (const auto &s) { return !s->connected(); });
+    }
+
     // used to get a reference to the slots for reading
     inline cow_copy_type<list_type, Lockable> slots_reference() {
         lock_type lock(m_mutex);
+        if (SIGSLOT_UNLIKELY(m_some_disconnected.load(std::memory_order_acquire))) {
+            remove_disconnected(lock);
+        }
         return m_slots;
     }
 
@@ -1557,6 +1660,12 @@ private:
     template <typename Cond>
     size_t disconnect_if(Cond && cond) {
         lock_type lock(m_mutex);
+        return disconnect_if(lock, std::forward<Cond>(cond));
+    }
+
+    // to be called under lock: disconnect a slot if a condition occurs.
+    template <typename Cond>
+    size_t disconnect_if(lock_type &, Cond && cond) {
         auto &groups = detail::cow_write(m_slots);
 
         size_t count = 0;
@@ -1568,6 +1677,7 @@ private:
                 if (cond(slts[i])) {
                     std::swap(slts[i], slts.back());
                     slts[i]->index() = i;
+                    disconnect_slot(slts.back());
                     slts.pop_back();
                     ++count;
                 } else {
@@ -1579,15 +1689,17 @@ private:
         return count;
     }
 
-    // to be called under lock: remove all the slots
-    void clear() {
-        detail::cow_write(m_slots).clear();
+    // Tell the slot that the signal is taking responsability for disconnecting it,
+    // to prevent the slot from further requesting the signal to disconnect it later.
+    void disconnect_slot(slot_ptr &slt) {
+        slt->mark_disconnected();
     }
 
 private:
     Lockable m_mutex;
     cow_type<list_type, Lockable> m_slots;
     std::atomic<bool> m_block;
+    std::atomic<bool> m_some_disconnected;
 };
 
 /**

@@ -153,11 +153,132 @@ static void test_threaded_misc() {
         t.join();
 }
 
+
+static std::atomic<int64_t> inc{0};
+static std::atomic<bool> call_last{false};
+
+struct call_after_destruct_observer {
+    explicit call_after_destruct_observer(sigslot::signal<int> &sig) {
+        call_last = false;
+        conn = sig.connect(&call_after_destruct_observer::op, this);
+    }
+
+    ~call_after_destruct_observer() {
+        conn = {};
+        call_last = false;
+        inc = 0;
+    }
+
+    void op(int i) {
+        call_last = true;
+        inc += i;
+    }
+
+    sigslot::scoped_connection conn;
+};
+
+// ensure that observer-style slots are never called after disconnection,
+// even in multithreaded context
+static void test_threaded_observer_destruction() {
+    sigslot::signal<int> sig;
+    std::atomic<bool> run{true};
+    int non_zero = 0;
+    int calls_after_death = 0;
+
+    auto emitter = [&] {
+        while (run) {
+            sig(1);
+        }
+    };
+
+    non_zero = 0;
+    std::array<std::thread, 10> emitters;
+    for (auto &t : emitters)
+        t = std::thread(emitter);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+
+    for (int i = 0; i < 10'000; ++i) {
+        inc = 0;
+
+        {
+            call_after_destruct_observer a(sig);
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
+
+        calls_after_death += call_last.load();
+        non_zero += inc != 0;
+    }
+
+    run = false;
+    for (auto &t : emitters)
+        t.join();
+
+    assert(non_zero == 0);
+    assert(calls_after_death == 0);
+}
+
+// after a sync disconnection, op should not be called anymore
+struct call_after_disconnect_observer {
+    explicit call_after_disconnect_observer(sigslot::signal<int> &sig) {
+        conn = sig.connect(&call_after_disconnect_observer::op, this);
+    }
+
+    void op(int i) {
+        inc += i;
+    }
+
+    sigslot::scoped_connection conn;
+};
+
+
+// ensure that disconnected slots with waiting are never called after disconnection,
+// even in multithreaded context
+static void test_threaded_disconnection() {
+    sigslot::signal<int> sig;
+    std::atomic<bool> run{true};
+    int calls_after_disconnect{0};
+
+    auto emitter = [&] {
+        while (run) {
+            sig(1);
+        }
+    };
+
+    std::array<std::thread, 10> emitters;
+    for (auto &t : emitters)
+        t = std::thread(emitter);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+
+    for (int i = 0; i < 10'000; ++i) {
+        inc = 0;
+        {
+            call_after_disconnect_observer a(sig);
+            std::this_thread::sleep_for(std::chrono::microseconds(50));
+
+            sig.disconnect_all();
+            // here call_after_disconnect_observer::op should not be called anymore
+            inc = 0;
+            std::this_thread::sleep_for(std::chrono::microseconds(50));
+
+        }
+
+        calls_after_disconnect += inc.load() != 0;
+    }
+
+    run = false;
+    for (auto &t : emitters)
+        t.join();
+
+    assert(calls_after_disconnect == 0);
+}
+
+
 int main() {
     test_threaded_emission();
     test_threaded_mix();
     test_threaded_crossed();
     test_threaded_misc();
-
+    test_threaded_observer_destruction();
+    test_threaded_disconnection();
     return 0;
 }
