@@ -15,6 +15,9 @@
 
 namespace sigslot {
 
+template <typename, typename...>
+class signal_base;
+
 namespace detail {
 
 // Used to detect an object of observer type
@@ -90,6 +93,13 @@ template <typename T>
 struct is_weak_ptr_compatible<T, void_t<decltype(to_weak(std::declval<T>()))>>
     : is_weak_ptr<decltype(to_weak(std::declval<T>()))> {};
 
+template <typename...>
+struct is_signal : std::false_type {};
+
+template <typename L, typename... T>
+struct is_signal<signal_base<L, T...>>
+    : std::true_type {};
+
 } // namespace detail
 
 static constexpr bool with_rtti =
@@ -126,10 +136,10 @@ template <typename T>
 constexpr bool is_observer_v = std::is_base_of<::sigslot::detail::observer_type,
                                                std::remove_pointer_t<std::remove_reference_t<T>>>::value;
 
-} // namespace trait
+template <typename S>
+constexpr bool is_signal_v = detail::is_signal<S>::value;
 
-template <typename, typename...>
-class signal_base;
+} // namespace trait
 
 /**
  * A group_id is used to identify a group of slots
@@ -517,6 +527,19 @@ inline std::shared_ptr<B> make_shared(Arg && ... arg) {
     return std::static_pointer_cast<B>(std::make_shared<D>(std::forward<Arg>(arg)...));
 }
 #endif
+
+
+// Adapt a signal into a cheap function object, for easy signal chaining
+template <typename SigT>
+struct signal_wrapper {
+    template <typename... U>
+    void operator()(U && ...u) {
+        (*m_sig)(std::forward<U>(u)...);
+    }
+
+    SigT *m_sig{};
+};
+
 
 /* slot_state holds slot type independent state, to be used to interact with
  * slots indirectly through connection and scoped_connection objects.
@@ -1608,6 +1631,30 @@ private:
     cow_type<list_type, Lockable> m_slots;
     std::atomic<bool> m_block;
 };
+
+
+/**
+ * Freestanding connect function that defers to the `signal_base::connect` member.
+ */
+template <typename Lockable, typename Arg, typename... T, typename ...Args>
+std::enable_if_t<!trait::is_signal_v<std::decay_t<Arg>>, connection>
+connect(signal_base<Lockable, T...> &sig, Arg &&arg, Args && ...args)
+{
+    return sig.connect(std::forward<Arg>(arg), std::forward<Args>(args)...);
+}
+
+/**
+ * Freestanding connect function that chains one signal to another.
+ */
+template <typename Lockable1, typename Lockable2, typename... T1, typename... T2, typename... Args>
+connection connect(signal_base<Lockable1, T1...> &sig1,
+                   signal_base<Lockable2, T2...> &sig2,
+                   Args && ...args)
+{
+    return sig1.connect(detail::signal_wrapper<signal_base<Lockable2, T2...>>{std::addressof(sig2)},
+                        std::forward<Args>(args)...);
+}
+
 
 /**
  * Specialization of signal_base to be used in single threaded contexts.

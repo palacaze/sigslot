@@ -79,8 +79,9 @@ void test_free_connection() {
     assert(sum == 1);
 
     sig.connect(f2);
+    sigslot::connect(sig, f1);
     sig(1);
-    assert(sum == 4);
+    assert(sum == 5);
 }
 
 void test_static_connection() {
@@ -92,8 +93,9 @@ void test_static_connection() {
     assert(sum == 1);
 
     sig.connect(&s::s2);
+    sigslot::connect(sig, &s::s1);
     sig(1);
-    assert(sum == 4);
+    assert(sum == 5);
 }
 
 void test_pmf_connection() {
@@ -109,9 +111,10 @@ void test_pmf_connection() {
     sig.connect(&s::f6, &p);
     sig.connect(&s::f7, &p);
     sig.connect(&s::f8, &p);
+    sigslot::connect(sig, &s::f1, &p);
 
     sig(1);
-    assert(sum == 8);
+    assert(sum == 9);
 }
 
 void test_const_pmf_connection() {
@@ -123,9 +126,10 @@ void test_const_pmf_connection() {
     sig.connect(&s::f4, &p);
     sig.connect(&s::f6, &p);
     sig.connect(&s::f8, &p);
+    sigslot::connect(sig, &s::f2, &p);
 
     sig(1);
-    assert(sum == 4);
+    assert(sum == 5);
 }
 
 void test_function_object_connection() {
@@ -140,9 +144,10 @@ void test_function_object_connection() {
     sig.connect(o6{});
     sig.connect(o7{});
     sig.connect(o8{});
+    sigslot::connect(sig, o1{});
 
     sig(1);
-    assert(sum == 8);
+    assert(sum == 9);
 }
 
 void test_overloaded_function_object_connection() {
@@ -151,12 +156,14 @@ void test_overloaded_function_object_connection() {
     sigslot::signal<double> sig1;
 
     sig.connect(oo{});
+    sigslot::connect(sig, oo{});
     sig(1);
-    assert(sum == 1);
+    assert(sum == 2);
 
     sig1.connect(oo{});
+    sigslot::connect(sig1, oo{});
     sig1(1);
-    assert(sum == 5);
+    assert(sum == 10);
 }
 
 void test_lambda_connection() {
@@ -164,12 +171,14 @@ void test_lambda_connection() {
     sigslot::signal<int> sig;
 
     sig.connect([&](int i) { sum += i; });
+    sigslot::connect(sig, [&](int i) { sum += i; });
     sig(1);
-    assert(sum == 1);
+    assert(sum == 2);
 
     sig.connect([&](int i) mutable { sum += 2*i; });
+    sigslot::connect(sig, [&](int i) mutable { sum += 2*i; });
     sig(1);
-    assert(sum == 4);
+    assert(sum == 8);
 }
 
 void test_generic_lambda_connection() {
@@ -189,11 +198,14 @@ void test_generic_lambda_connection() {
     sig1.connect(f);
     sig2.connect(f);
     sig3.connect(f);
+    sigslot::connect(sig1, f);
+    sigslot::connect(sig2, f);
+    sigslot::connect(sig3, f);
     sig1(1);
     sig2("foo");
     sig3(4.1);
 
-    assert(s.str() == "1foo4.1");
+    assert(s.str() == "11foofoo4.14.1");
 }
 
 void test_lvalue_emission() {
@@ -235,6 +247,27 @@ void test_compatible_args() {
     sigslot::signal<int, std::string, bool> sig;
     sig.connect(f);
     sig('0', "foo", true);
+
+    assert(ll == 48);
+    assert(ss == "foo");
+    assert(ii == 1);
+}
+
+void test_compatible_args_chaining() {
+    long ll = 0;
+    std::string ss;
+    short ii = 0;
+
+    auto f = [&] (long l, const std::string &s, short i) {
+        ll = l; ss = s; ii = i;
+    };
+
+    sigslot::signal<long, std::string, short> sig1;
+    sig1.connect(f);
+
+    sigslot::signal<int, std::string, bool> sig2;
+    sigslot::connect(sig2, sig1);
+    sig2('0', "foo", true);
 
     assert(ll == 48);
     assert(ss == "foo");
@@ -682,6 +715,7 @@ int main() {
     test_generic_lambda_connection();
     test_lvalue_emission();
     test_compatible_args();
+    test_compatible_args_chaining();
     test_mutation();
     test_disconnection();
     test_disconnection_by_callable();
