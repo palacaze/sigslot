@@ -408,7 +408,7 @@ int main() {
 
 The user must make sure that the lifetime of a slot exceeds the one of a signal,
 which may get tedious in complex software. To simplify this task, Sigslot can
-automatically disconnect slot object whose lifetime it is able to track. In order
+automatically disconnect slot objects whose lifetime it is able to track. In order
 to do that, the slot must be convertible to a weak pointer of some form.
 
 `std::shared_ptr` and `std::weak_ptr` are supported out of the box, and adapters
