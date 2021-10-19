@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.5)
 
-project(pal_sigslot VERSION 1.2.0 LANGUAGES CXX)
+project(pal_sigslot VERSION 1.2.1 LANGUAGES CXX)
 
 ### main project
 set(SIGSLOT_MAIN_PROJECT OFF)
