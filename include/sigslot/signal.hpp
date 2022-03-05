@@ -7,7 +7,7 @@
 #include <thread>
 #include <vector>
 
-#if defined __clang__ || (__GNUC__ > 5)
+#if defined __clang__ || (defined __GNUC__ && (__GNUC__ > 5))
 #define SIGSLOT_MAY_ALIAS __attribute__((__may_alias__))
 #else
 #define SIGSLOT_MAY_ALIAS
