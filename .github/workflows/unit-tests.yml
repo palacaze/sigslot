@@ -35,6 +35,7 @@ jobs:
         uses: jurplel/install-qt-action@v2
         with:
           version: ${{ matrix.qt-version }}
+          archives: 'qtbase'
           dir: ${{ github.workspace }}/Qt-${{ runner.os }}-${{ matrix.qt-version }}
           cached: ${{ steps.cache-qt.outputs.cache-hit }}
       -
