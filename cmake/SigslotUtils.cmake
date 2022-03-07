@@ -33,12 +33,7 @@ target_compile_options(Sigslot_CommonWarnings INTERFACE
 
 add_library(Sigslot_ManyWarnings INTERFACE)
 target_compile_options(Sigslot_ManyWarnings INTERFACE
-    $<$<BOOL:${SIGSLOT_COMPILER_CLANG_OR_CLANGCL_OR_GCC}>:
-        -Weverything;-Wno-c++98-compat;-Wno-c++98-compat-pedantic;-Wno-unused-macros;
-        -Wno-newline-eof;-Wno-exit-time-destructors;-Wno-global-constructors;
-        -Wno-gnu-zero-variadic-macro-arguments;-Wno-documentation;-Wno-missing-prototypes;
-        -Wno-padded;-Wno-weak-vtables;-Wno-c++17-extensions;-Wno-shadow-field-in-constructor;
-        -Wno-return-std-move-in-c++11>
+    $<$<BOOL:${SIGSLOT_COMPILER_CLANG_OR_CLANGCL_OR_GCC}>:-Wpedantic>
     $<$<BOOL:${SIGSLOT_COMPILER_CLANG_OR_GCC}>:-fdiagnostics-color=always;-pipe>
     $<$<CXX_COMPILER_ID:MSVC>:/W4>
 )
@@ -94,14 +89,14 @@ target_link_libraries(Sigslot_Libcxx INTERFACE
 )
 
 option(SIGSLOT_ENABLE_COMMON_WARNINGS "Enable common compiler flags" ON)
-option(SIGSLOT_ENABLE_MANY_WARNINGS "Enable most compiler flags" OFF)
+option(SIGSLOT_ENABLE_MANY_WARNINGS "Enable most compiler flags" ON)
 option(SIGSLOT_DISABLE_RTTI "Disable Runtime Type Information" OFF)
 option(SIGSLOT_ENABLE_LTO "Enable link time optimization (release only)" OFF)
 option(SIGSLOT_ENABLE_LIBCXX "Use libcxx with clang" OFF)
 option(SIGSLOT_ENABLE_PROFILING "Add compile flags to help with profiling" OFF)
 option(SIGSLOT_SANITIZE_ADDRESS "Compile with address sanitizer support" OFF)
-option(SIGSLOT_SANITIZE_THREADS "Compile with thread sanitizer support" OFF)
-option(SIGSLOT_SANITIZE_UNDEFINED "Compile with undefined sanitizer support" OFF)
+option(SIGSLOT_SANITIZE_THREADS "Compile with thread sanitizer support" ON)
+option(SIGSLOT_SANITIZE_UNDEFINED "Compile with undefined sanitizer support" ON)
 
 # common properties
 function(sigslot_set_properties target scope)

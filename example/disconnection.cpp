@@ -3,7 +3,7 @@
 #include <string>
 
 namespace {
-static int ti = 0;
+int ti = 0;
 } // anonymous namespace
 
 void f1() { ti += 1; }
@@ -11,11 +11,13 @@ void f2() { ti += 1; }
 
 struct s {
     virtual ~s() = default;
-    void m1() { ti += 1; }
-    void m2() { ti += 1; }
-    void m3() { ti += 1; }
+    void m1() const { ti += i; }
+    void m2() const { ti += i; }
+    void m3() const { ti += i; }
 
     virtual void v() = 0;
+
+    const int i{1};
 };
 
 struct b {

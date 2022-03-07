@@ -13,6 +13,7 @@
 #define LAMBDA1() LAMBDA2() LAMBDA2() LAMBDA2() LAMBDA2() LAMBDA2()
 #define LAMBDAS() LAMBDA1() LAMBDA1() LAMBDA1() LAMBDA1() LAMBDA1()
 
+// NOLINTNEXTLINE(hicpp-function-size,readability-function-size)
 int main() {
     sigslot::signal<int> sig;
 

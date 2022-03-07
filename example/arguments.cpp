@@ -5,6 +5,7 @@
 struct foo {
     // Notice how we accept a double as first argument here
     // This is fine because float is convertible to double
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     void bar(float d, int i, bool b, std::string &s) {
         s = b ? std::to_string(i) : std::to_string(d);
     }
@@ -52,7 +53,7 @@ int main() {
     sig.connect(lambda_printer);
     sig.connect(obj());
 
-    float f = 1.f;
+    float f = 1.F;
     short i = 2;
     std::string s = "0";
 

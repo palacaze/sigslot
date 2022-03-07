@@ -4,8 +4,9 @@
 void f() { std::cout << "free function\n"; }
 
 struct s {
-    void m() { std::cout << "member function\n"; }
+    void m() const { std::cout << "member function: v=" << v << std::endl; }
     static void sm() { std::cout << "static member function\n";  }
+    int v{123};
 };
 
 struct o {
