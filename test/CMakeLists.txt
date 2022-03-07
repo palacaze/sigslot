@@ -1,6 +1,6 @@
-add_custom_target(tests COMMENT "Build all the unit tests.")
 
 if(SIGSLOT_RUN_TESTS)
+    add_custom_target(tests COMMENT "Build all the unit tests.")
     add_custom_command(
         TARGET tests
         POST_BUILD
@@ -11,7 +11,9 @@ endif()
 macro(pal_create_test target ut)
     add_executable(${target} "${ut}")
     add_test(${target} ${target})
-    add_dependencies(tests ${target})
+    if(SIGSLOT_RUN_TESTS)
+        add_dependencies(tests ${target})
+    endif()
     sigslot_set_properties(${target} PRIVATE)
     target_link_libraries(${target} PRIVATE Pal::Sigslot)
     target_compile_definitions(${target} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:_SCL_SECURE_NO_WARNINGS>)
