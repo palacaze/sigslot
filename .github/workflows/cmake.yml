@@ -17,6 +17,7 @@ on:
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
+  CTEST_OUTPUT_ON_FAILURE: 1
 
 jobs:
   build:
@@ -25,9 +26,11 @@ jobs:
     # cross-platform coverage.
     runs-on: ${{ matrix.config.os }}
     strategy:
+      fail-fast: false
+
       matrix:
         config:
-          - {name: "Windows clang-cl", os: windows-latest, cc: "clang-cl", cxx: "clang-cl"}
+          # XXX - {name: "Windows clang-cl", os: windows-latest, cc: "clang-cl", cxx: "clang-cl"}
           - {name: "Ubuntu gcc", os: ubuntu-20.04, cc: "gcc-10", cxx: "g++-10"}
           - {name: "Ubuntu clang", os: ubuntu-20.04, cc: "clang", cxx: "clang++"}
           - {name: "OSX apple-clang", os: macos-latest, cc: "clang", cxx: "clang++"}
@@ -41,6 +44,7 @@ jobs:
         run: cmake -E make_directory ${{github.workspace}}/build
 
       - name: Configure cmake - Windows
+        if: runner.os == 'Windows'
         shell: bash
         working-directory: ${{github.workspace}}/build
         env:
@@ -48,9 +52,9 @@ jobs:
           CXX: ${{ matrix.config.cxx }}
 
         run: cmake $GITHUB_WORKSPACE -G "Visual Studio 16 2019" -T ClangCl -DCMAKE_BUILD_TYPE=$BUILD_TYPE
-        if: runner.os == 'Windows'
 
       - name: Configure cmake
+        if: runner.os != 'Windows'
         shell: bash
         working-directory: ${{github.workspace}}/build
         env:
@@ -58,7 +62,6 @@ jobs:
           CXX: ${{ matrix.config.cxx }}
 
         run: cmake $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE
-        if: runner.os != 'Windows'
 
       - name: Build
         working-directory: ${{github.workspace}}/build
