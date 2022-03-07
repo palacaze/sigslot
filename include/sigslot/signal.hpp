@@ -99,8 +99,8 @@ template<typename T>
 concept GroupId = requires(T g1, T g2) {
     requires std::is_default_constructible_v<T>;
     requires std::is_copy_constructible_v<T>;
-    { g1 < g2 } -> std::convertible_to<bool>;
-    { g1 == g2 } -> std::convertible_to<bool>;
+    { g1 < g2 } -> std::same_as<bool>;
+    { g1 == g2 } -> std::same_as<bool>;
 };
 
 template <GroupId, typename, typename...>
