@@ -30,7 +30,7 @@ jobs:
 
       matrix:
         config:
-          # XXX - {name: "Windows clang-cl", os: windows-latest, cc: "clang-cl", cxx: "clang-cl"}
+          - {name: "Windows", os: windows-latest, cc: "clang-cl", cxx: "clang-cl"}
           - {name: "Ubuntu gcc", os: ubuntu-20.04, cc: "gcc-10", cxx: "g++-10"}
           - {name: "Ubuntu clang", os: ubuntu-20.04, cc: "clang", cxx: "clang++"}
           - {name: "OSX apple-clang", os: macos-latest, cc: "clang", cxx: "clang++"}
@@ -47,11 +47,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         working-directory: ${{github.workspace}}/build
-        env:
-          CC: ${{ matrix.config.cc }}
-          CXX: ${{ matrix.config.cxx }}
-
-        run: cmake $GITHUB_WORKSPACE -G "Visual Studio 16 2019" -T ClangCl -DCMAKE_BUILD_TYPE=$BUILD_TYPE
+        run: cmake $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE
 
       - name: Configure cmake
         if: runner.os != 'Windows'
@@ -66,7 +62,7 @@ jobs:
       - name: Build
         working-directory: ${{github.workspace}}/build
         shell: bash
-        run: cmake --build . --config $BUILD_TYPE --target tests
+        run: cmake --build . --config $BUILD_TYPE --target all
 
       - name: Test
         working-directory: ${{github.workspace}}/build

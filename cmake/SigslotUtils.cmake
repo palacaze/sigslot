@@ -95,8 +95,8 @@ option(SIGSLOT_ENABLE_LTO "Enable link time optimization (release only)" OFF)
 option(SIGSLOT_ENABLE_LIBCXX "Use libcxx with clang" OFF)
 option(SIGSLOT_ENABLE_PROFILING "Add compile flags to help with profiling" OFF)
 option(SIGSLOT_SANITIZE_ADDRESS "Compile with address sanitizer support" OFF)
-option(SIGSLOT_SANITIZE_THREADS "Compile with thread sanitizer support" ON)
-option(SIGSLOT_SANITIZE_UNDEFINED "Compile with undefined sanitizer support" ON)
+option(SIGSLOT_SANITIZE_THREADS "Compile with thread sanitizer support" OFF)
+option(SIGSLOT_SANITIZE_UNDEFINED "Compile with undefined sanitizer support" OFF)
 
 # common properties
 function(sigslot_set_properties target scope)
