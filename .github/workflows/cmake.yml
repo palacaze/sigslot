@@ -79,17 +79,18 @@ jobs:
 
       - name: Run clang-tidy on Ubuntu build host
         if: startsWith(matrix.config.name, 'Ubuntu')
-        working-directory: $GITHUB_WORKSPACE
         shell: bash
-        run: run-clang-tidy-12 -p ${{github.workspace}}/build example/basic.cpp
+        run: |
+          pwd && ls -la
+          run-clang-tidy-12 -p ${{github.workspace}}/build example/basic.cpp
 
       - name: Run clang-tidy on MacOS build host
         if: startsWith(matrix.config.name, 'MacOS')
-        working-directory: $GITHUB_WORKSPACE
         shell: bash
         run: |
           # brew install llvm
           export PATH=/usr/local/opt/llvm/bin/:${PATH}
+          pwd && ls -la
           run-clang-tidy -p ${{github.workspace}}/build example/basic.cpp
 
       - name: Cache
