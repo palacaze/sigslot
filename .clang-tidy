@@ -1,0 +1,63 @@
+#
+# clang v12
+#
+Checks:
+'-*,
+    -llvm-*,
+    -llvm-header-guard,
+    boost-*,
+    bugprone-*,
+    -bugprone-suspicious-include,
+    cert-*,
+    clang-analyzer-*,
+    -cppcoreguidelines-*,
+    concurrency-*,
+    -hicpp-*,
+    misc-*,
+    modernize-*,
+    -modernize-use-default-member-init,
+    -modernize-use-equals-default,
+    -modernize-use-trailing-return-type,
+    -modernize-use-nodiscard,
+    performance-*,
+    portability-*,
+    readability-*,
+    -readability-magic-numbers,
+    -readability-named-parameter,
+    -readability-identifier-naming,
+    -readability-redundant-access-specifiers,
+'
+
+HeaderFilterRegex: '.*'
+WarningsAsErrors: 'clang*'
+FormatStyle:     file
+UseColor:        false
+User:            klein_cl
+
+CheckOptions:
+  - { key: modernize-loop-convert.MaxCopySize,         value: '16'       }
+  - { key: modernize-loop-convert.MinConfidence,       value: reasonable }
+  - { key: modernize-loop-convert.NamingStyle,         value: CamelCase  }
+  - { key: modernize-pass-by-value.IncludeStyle,       value: llvm       }
+  - { key: modernize-replace-auto-ptr.IncludeStyle,    value: llvm       }
+  - { key: modernize-use-nullptr.NullMacros,           value: 'NULL'     }
+  - { key: readability-identifier-naming.NamespaceCase,          value: CamelCase  }
+  - { key: readability-identifier-naming.ClassCase,              value: CamelCase  }
+  - { key: readability-identifier-naming.MemberCase,             value: camelBack  }
+  - { key: readability-identifier-naming.MemberHungarianPrefix , value: On         }
+  - { key: readability-identifier-naming.MemberPrefix,           value: m_         }
+# - { key: readability-identifier-naming.PrivateMemberSuffix,    value: _          }
+  - { key: readability-identifier-naming.StructCase,             value: camel_Snake_Back }
+  - { key: readability-identifier-naming.FunctionCase,           value: camelBack  }
+  - { key: readability-identifier-naming.VariableCase,           value: camelBack  }
+# - { key: readability-identifier-naming.VariablePrefix,         value: '_'        }
+  - { key: readability-identifier-naming.GlobalConstantCase,     value: UPPER_CASE }
+  - { key: readability-identifier-naming.EnumCase,               value: CamelCase  }
+  - { key: readability-identifier-naming.EnumPrefix,             value: 'E'        }
+  - { key: readability-identifier-naming.GlobalFunctionCase,     value: lower_case }
+  - { key: readability-identifier-naming.GlobalVariableCase,     value: lower_case }
+# - { key: readability-identifier-naming.GlobalVariablePrefix,   value: 'g'        }
+  - { key: readability-identifier-naming.ConstexprFunctionCase,  value: CamelCase  }
+  - { key: readability-identifier-naming.ConstexprMethodCase,    value: CamelCase  }
+  - { key: readability-identifier-naming.ConstexprVariableCase,  value: camelBack  }
+...

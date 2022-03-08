@@ -31,8 +31,8 @@ jobs:
       matrix:
         config:
           - {name: "Windows", os: windows-latest, cc: "clang-cl", cxx: "clang-cl"}
-          - {name: "Ubuntu gcc", os: ubuntu-20.04, cc: "gcc-10", cxx: "g++-10"}
-          - {name: "Ubuntu clang", os: ubuntu-20.04, cc: "clang", cxx: "clang++"}
+          - {name: "Ubuntu gcc", os: ubuntu-latest, cc: "gcc-10", cxx: "g++-10"}
+          - {name: "Ubuntu clang", os: ubuntu-latest, cc: "clang-12", cxx: "clang++-12"}
           - {name: "OSX apple-clang", os: macos-latest, cc: "clang", cxx: "clang++"}
 
     steps:
@@ -70,6 +70,12 @@ jobs:
         # Execute tests defined by the CMake configuration.
         # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
         run: ctest -C $BUILD_TYPE
+
+      - name: Check
+        if: runner.os != 'Windows'
+        working-directory: ${{github.workspace}}/build
+        shell: bash
+        run: clang-tidy example/basic.cpp
 
       - name: Cache
         uses: actions/cache@v2.1.3
