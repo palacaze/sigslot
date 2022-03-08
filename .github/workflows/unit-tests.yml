@@ -16,6 +16,7 @@ jobs:
   Test:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         qt-version: ['5.15.2']
         build_type: ['Debug', 'Release']
