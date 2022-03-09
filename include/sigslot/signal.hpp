@@ -885,7 +885,7 @@ public:
         : slot_base<Group, Args...>(c, gid)
         , func{std::forward<F>(f)} {}
 
-    connection conn;
+    connection conn; // TODO(klein_cl): prevent public members! CK
 
 protected:
     void call_slot(Args ...args) override {
@@ -956,7 +956,7 @@ public:
         , pmf{std::forward<F>(f)}
         , ptr{std::forward<P>(p)} {}
 
-    connection conn;
+    connection conn; // TODO(klein_cl): prevent public members! CK
 
 protected:
     void call_slot(Args ...args) override {
@@ -1624,59 +1624,59 @@ private:
 template <template<typename...> typename Sig, typename Owner, GroupId Group, typename... Args>
 class signal_interface final {
     using signal_type = Sig<Group, Args...>;
-    std::optional<signal_type> _sigStorage;
-    signal_type* _sig;
+    std::optional<signal_type> m_sig_storage;
+    signal_type* m_sig;
     friend Owner;
 
     template <typename... U>
     inline void operator()(U&& ... args) {
-        (*_sig)(std::forward<U>(args)...);
+        (*m_sig)(std::forward<U>(args)...);
         }
 
     inline size_t slot_count() noexcept {
-        return _sig->slot_count();
+        return m_sig->slot_count();
         }
 
     inline void block() noexcept {
-        _sig->block();
+        m_sig->block();
         }
 
     inline void block(Group const& gid) {
-        _sig->block(gid);
+        m_sig->block(gid);
     }
 
     inline void unblock(Group const& gid) {
-        _sig->unblock(gid);
+        m_sig->unblock(gid);
     }
 
     inline void unblock() noexcept {
-        _sig->unblock();
+        m_sig->unblock();
         }
 
     inline bool blocked() const noexcept {
-        return _sig->blocked();
+        return m_sig->blocked();
         }
 
     signal_interface(signal_interface&& o) /* not noexcept */ {
-        if(o._sigStorage.has_value()) {
-            _sigStorage = std::move(o._sigStorage);
-            _sig = std::addressof(*_sigStorage);
-            o._sig = nullptr;
+        if(o.m_sig_storage.has_value()) {
+            m_sig_storage = std::move(o.m_sig_storage);
+            m_sig = std::addressof(*m_sig_storage);
+            o.m_sig = nullptr;
         }
         else {
-            std::swap(_sig, o._sig);
+            std::swap(m_sig, o.m_sig);
         }
     }
 
     signal_interface& operator=(signal_interface&& o) /* not noexcept */ {
-        if(_sig != o._sig) {
-            if(o._sigStorage.has_value()) {
-            _sigStorage = std::move(o._sigStorage);
-            _sig = std::addressof(*_sigStorage);
-            o._sig = nullptr;
+        if(m_sig != o.m_sig) {
+            if(o.m_sig_storage.has_value()) {
+            m_sig_storage = std::move(o.m_sig_storage);
+            m_sig = std::addressof(*m_sig_storage);
+            o.m_sig = nullptr;
             }
             else {
-            std::swap(_sig, o._sig);
+            std::swap(m_sig, o.m_sig);
             }
         }
         return *this;
@@ -1687,14 +1687,14 @@ class signal_interface final {
 public:
     using group_id = Group;
     signal_interface()
-        : _sigStorage(std::in_place)
-        , _sig(std::addressof(*_sigStorage))
+        : m_sig_storage(std::in_place)
+        , m_sig(std::addressof(*m_sig_storage))
         {
         }
 
     explicit signal_interface(signal_type* sig)
-        : _sigStorage(std::nullopt)
-        , _sig(sig)
+        : m_sig_storage(std::nullopt)
+        , m_sig(sig)
         {
         }
 
@@ -1704,29 +1704,29 @@ public:
     template <typename... Ts>
     requires detail::ConnectCallable<signal_type, Ts...>
     inline connection connect(Ts&& ... args) {
-        return _sig->connect(std::forward<Ts>(args)...);
+        return m_sig->connect(std::forward<Ts>(args)...);
         }
 
     template <typename... Ts>
     requires detail::ConnectExtendedCallable<signal_type, Ts...>
     inline connection connect_extended(Ts&& ... args) {
-        return _sig->connect_extended(std::forward<Ts>(args)...);
+        return m_sig->connect_extended(std::forward<Ts>(args)...);
         }
 
     template <typename... Ts>
     requires detail::ConnectCallable<signal_type, Ts...>
     inline scoped_connection connect_scoped(Ts&& ... args) {
-        return _sig->connect(std::forward<Ts>(args)...);
+        return m_sig->connect(std::forward<Ts>(args)...);
         }
 
     template <typename... Ts>
     requires detail::DisconnectCallable<signal_type, Ts...>
     inline size_t disconnect(Ts&& ... args) {
-        return _sig->disconnect(std::forward<Ts>(args)...);
+        return m_sig->disconnect(std::forward<Ts>(args)...);
         }
 
     inline void disconnect_all() {
-        _sig->disconnect_all();
+        m_sig->disconnect_all();
         }
 };
 
