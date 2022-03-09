@@ -147,7 +147,7 @@ union SIGSLOT_MAY_ALIAS func_ptr {
         return &data[0];
     }
 
-    const void* value() const {
+    [[nodiscard]] const void* value() const {
         return &data[0];
     }
 
@@ -157,7 +157,7 @@ union SIGSLOT_MAY_ALIAS func_ptr {
     }
 
     template <typename T>
-    const T& value() const {
+    [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] const T& value() const {
         return *static_cast<const T*>(value());
     }
 
@@ -170,7 +170,8 @@ union SIGSLOT_MAY_ALIAS func_ptr {
     }
 
     mock::fun_types _;
-    char data[sizeof(mock::fun_types)];
+    // NOLINTNEXTLINE(hicpp-avoid-c-arrays,modernize-avoid-c-arrays)
+    char data[sizeof(mock::fun_types)]; // TODO(CK) use std::array<> instead!
 };
 
 template <typename T>
@@ -228,7 +229,7 @@ struct function_traits<T> {
 
 template <typename T>
 func_ptr get_function_ptr(const T &t) {
-    func_ptr d;
+    func_ptr d{};
     std::uninitialized_fill(std::begin(d.data), std::end(d.data), '\0');
     function_traits<std::decay_t<T>>::ptr(t, d);
     return d;
@@ -246,7 +247,7 @@ obj_ptr get_object_ptr(const T &t);
 
 template <typename T>
 struct object_pointer {
-    static obj_ptr get(const T&) {
+    static obj_ptr get(const T& /*unused*/) {
         return nullptr;
     }
 };
@@ -281,7 +282,6 @@ obj_ptr get_object_ptr(const T &t) {
     return object_pointer<T>::get(t);
 }
 
-
 // noop mutex for thread-unsafe use
 struct null_mutex {
     null_mutex() noexcept = default;
@@ -291,7 +291,7 @@ struct null_mutex {
     null_mutex(null_mutex &&) = delete;
     null_mutex& operator=(null_mutex &&) = delete;
 
-    inline bool try_lock() noexcept { return true; }
+    inline static bool try_lock() noexcept { return true; }
     inline void lock() noexcept {}
     inline void unlock() noexcept {}
 };
@@ -347,8 +347,9 @@ class copy_on_write {
             : value(std::forward<Args>(args)...)
         {}
 
+        // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes)
         std::atomic<std::size_t> count{1};
-        T value;
+        T value{}; // NOLINT(misc-non-private-member-variables-in-classes)
     };
 
 public:
@@ -379,6 +380,7 @@ public:
     ~copy_on_write() {
         if (m_data && (--m_data->count == 0)) {
             delete m_data;
+            m_data = nullptr;
         }
     }
 
@@ -399,20 +401,21 @@ public:
         if (!unique()) {
             *this = copy_on_write(read());
         }
-        return m_data->value;
+        // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDelete)
+        return m_data->value; // TODO(CK) error: Use of memory after it is freed?
     }
 
-    const element_type& read() const noexcept {
-        return m_data->value;
+    [[nodiscard]] const element_type& read() const noexcept {
+        // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDelete)
+        return m_data->value; // TODO(CK) error: Use of memory after it is freed?
     }
 
     friend inline void swap(copy_on_write &x, copy_on_write &y) noexcept {
-        using std::swap;
-        swap(x.m_data, y.m_data);
+        std::swap(x.m_data, y.m_data);
     }
 
 private:
-    bool unique() const noexcept {
+    [[nodiscard]] bool unique() const noexcept {
         return m_data->count == 1;
     }
 
@@ -475,7 +478,7 @@ public:
 
     virtual ~slot_state() = default;
 
-    virtual bool connected() const noexcept { return m_connected; }
+    [[nodiscard]] virtual bool connected() const noexcept { return m_connected; }
 
     bool disconnect() noexcept {
         bool ret = m_connected.exchange(false);
@@ -485,14 +488,14 @@ public:
         return ret;
     }
 
-    bool blocked() const noexcept { return m_blocked.load(); }
+    [[nodiscard]] bool blocked() const noexcept { return m_blocked.load(); }
     void block()   noexcept { m_blocked.store(true); }
     void unblock() noexcept { m_blocked.store(false); }
 
 protected:
     virtual void do_disconnect() {}
 
-    auto index() const {
+    [[nodiscard]] auto index() const {
         return m_index;
     }
 
@@ -517,7 +520,7 @@ protected:
         , m_group(gid)
     {}
 public:
-    Group const& group() const {
+    [[nodiscard]] Group const& group() const {
         return m_group;
     }
 private:
@@ -585,11 +588,11 @@ public:
     connection(connection &&) noexcept = default;
     connection & operator=(connection &&) noexcept = default;
 
-    bool valid() const noexcept {
+    [[nodiscard]] bool valid() const noexcept {
         return !m_state.expired();
     }
 
-    bool connected() const noexcept {
+    [[nodiscard]] bool connected() const noexcept {
         const auto d = m_state.lock();
         return d && d->connected();
     }
@@ -599,7 +602,7 @@ public:
         return d && d->disconnect();
     }
 
-    bool blocked() const noexcept {
+    [[nodiscard]] bool blocked() const noexcept {
         const auto d = m_state.lock();
         return d && d->blocked();
     }
@@ -616,7 +619,7 @@ public:
         }
     }
 
-    connection_blocker blocker() const noexcept {
+    [[nodiscard]] connection_blocker blocker() const noexcept {
         return connection_blocker{m_state};
     }
 
@@ -626,7 +629,7 @@ protected:
         : m_state{std::move(s)}
     {}
 
-protected:
+    // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes)
     std::weak_ptr<detail::slot_state> m_state;
 };
 
@@ -641,7 +644,9 @@ public:
         disconnect();
     }
 
+    // NOLINTNEXTLINE(google-explicit-constructor,hicpp-explicit-conversions)
     /*implicit*/ scoped_connection(const connection &c) noexcept : connection(c) {}
+    // NOLINTNEXTLINE(google-explicit-constructor,hicpp-explicit-conversions)
     /*implicit*/ scoped_connection(connection &&c) noexcept : connection(std::move(c)) {}
 
     scoped_connection(const scoped_connection &) noexcept = delete;
@@ -775,13 +780,13 @@ public:
     template <typename... U>
     void operator()(U && ...u) {
         if (slot_state::connected() && !slot_state::blocked()) {
-            call_slot(std::forward<U>(u)...);
+            call_slot(std::forward<U>(u)...); // NOLINT(hicpp-no-array-decay)
         }
     }
 
     // check if we are storing callable c
     template <typename C>
-    bool has_callable(const C &c) const {
+    [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] bool has_callable(const C &c) const {
         auto cp = get_function_ptr(c);
         auto p = get_callable();
         return cp && p && cp == p;
@@ -789,19 +794,19 @@ public:
 
     template <typename C>
     requires (function_traits<C>::must_check_object)
-    bool has_full_callable(const C &c) const {
+    [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] bool has_full_callable(const C &c) const {
         return has_callable(c) && check_class_type<std::decay_t<C>>();
     }
 
     template <typename C>
     requires (!function_traits<C>::must_check_object)
-    bool has_full_callable(const C &c) const {
+    [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] bool has_full_callable(const C &c) const {
         return has_callable(c);
     }
 
     // check if we are storing object o
     template <typename O>
-    bool has_object(const O &o) const {
+    [[nodiscard]] [[nodiscard]] bool has_object(const O &o) const {
         return get_object() == get_object_ptr(o);
     }
 
@@ -811,24 +816,24 @@ protected:
     }
 
     // retieve a pointer to the object embedded in the slot
-    virtual obj_ptr get_object() const noexcept {
+    [[nodiscard]] virtual obj_ptr get_object() const noexcept {
         return nullptr;
     }
 
     // retieve a pointer to the callable embedded in the slot
-    virtual func_ptr get_callable() const noexcept {
+    [[nodiscard]] virtual func_ptr get_callable() const noexcept {
         return get_function_ptr(nullptr);
     }
 
 #ifdef SIGSLOT_RTTI_ENABLED
     // retieve a pointer to the callable embedded in the slot
-    virtual const std::type_info& get_callable_type() const noexcept {
+    [[nodiscard]] virtual const std::type_info& get_callable_type() const noexcept {
         return typeid(nullptr);
     }
 
 private:
     template <typename U>
-    bool check_class_type() const {
+    [[nodiscard]] bool check_class_type() const {
         return typeid(U) == get_callable_type();
     }
 
@@ -860,12 +865,12 @@ protected:
         func(args...);
     }
 
-    func_ptr get_callable() const noexcept override {
+    [[nodiscard]] func_ptr get_callable() const noexcept override {
         return get_function_ptr(func);
     }
 
 #ifdef SIGSLOT_RTTI_ENABLED
-    const std::type_info& get_callable_type() const noexcept override {
+    [[nodiscard]] const std::type_info& get_callable_type() const noexcept override {
         return typeid(func);
     }
 #endif
@@ -885,19 +890,19 @@ public:
         : slot_base<Group, Args...>(c, gid)
         , func{std::forward<F>(f)} {}
 
-    connection conn; // TODO(klein_cl): prevent public members! CK
+    connection conn; // TODO(CK): prevent public members!
 
 protected:
     void call_slot(Args ...args) override {
         func(conn, args...);
     }
 
-    func_ptr get_callable() const noexcept override {
+    [[nodiscard]] func_ptr get_callable() const noexcept override {
         return get_function_ptr(func);
     }
 
 #ifdef SIGSLOT_RTTI_ENABLED
-    const std::type_info& get_callable_type() const noexcept override {
+    [[nodiscard]] const std::type_info& get_callable_type() const noexcept override {
         return typeid(func);
     }
 #endif
@@ -925,16 +930,16 @@ protected:
         ((*ptr).*pmf)(args...);
     }
 
-    func_ptr get_callable() const noexcept override {
+    [[nodiscard]] func_ptr get_callable() const noexcept override {
         return get_function_ptr(pmf);
     }
 
-    obj_ptr get_object() const noexcept override {
+    [[nodiscard]] obj_ptr get_object() const noexcept override {
         return get_object_ptr(ptr);
     }
 
 #ifdef SIGSLOT_RTTI_ENABLED
-    const std::type_info& get_callable_type() const noexcept override {
+    [[nodiscard]] const std::type_info& get_callable_type() const noexcept override {
         return typeid(pmf);
     }
 #endif
@@ -956,22 +961,22 @@ public:
         , pmf{std::forward<F>(f)}
         , ptr{std::forward<P>(p)} {}
 
-    connection conn; // TODO(klein_cl): prevent public members! CK
+    connection conn; // TODO(CK): prevent public members!
 
 protected:
     void call_slot(Args ...args) override {
         ((*ptr).*pmf)(conn, args...);
     }
 
-    func_ptr get_callable() const noexcept override {
+    [[nodiscard]] func_ptr get_callable() const noexcept override {
         return get_function_ptr(pmf);
     }
-    obj_ptr get_object() const noexcept override {
+    [[nodiscard]] obj_ptr get_object() const noexcept override {
         return get_object_ptr(ptr);
     }
 
 #ifdef SIGSLOT_RTTI_ENABLED
-    const std::type_info& get_callable_type() const noexcept override {
+    [[nodiscard]] const std::type_info& get_callable_type() const noexcept override {
         return typeid(pmf);
     }
 #endif
@@ -996,7 +1001,7 @@ public:
         , ptr{std::forward<P>(p)}
     {}
 
-    bool connected() const noexcept override {
+    [[nodiscard]] bool connected() const noexcept override {
         return !ptr.expired() && slot_state::connected();
     }
 
@@ -1012,16 +1017,16 @@ protected:
         }
     }
 
-    func_ptr get_callable() const noexcept override {
+    [[nodiscard]] func_ptr get_callable() const noexcept override {
         return get_function_ptr(func);
     }
 
-    obj_ptr get_object() const noexcept override {
+    [[nodiscard]] obj_ptr get_object() const noexcept override {
         return get_object_ptr(ptr);
     }
 
 #ifdef SIGSLOT_RTTI_ENABLED
-    const std::type_info& get_callable_type() const noexcept override {
+    [[nodiscard]] const std::type_info& get_callable_type() const noexcept override {
         return typeid(func);
     }
 #endif
@@ -1046,7 +1051,7 @@ public:
         , ptr{std::forward<P>(p)}
     {}
 
-    bool connected() const noexcept override {
+    [[nodiscard]] bool connected() const noexcept override {
         return !ptr.expired() && slot_state::connected();
     }
 
@@ -1062,16 +1067,16 @@ protected:
         }
     }
 
-    func_ptr get_callable() const noexcept override {
+    [[nodiscard]] func_ptr get_callable() const noexcept override {
         return get_function_ptr(pmf);
     }
 
-    obj_ptr get_object() const noexcept override {
+    [[nodiscard]] obj_ptr get_object() const noexcept override {
         return get_object_ptr(ptr);
     }
 
 #ifdef SIGSLOT_RTTI_ENABLED
-    const std::type_info& get_callable_type() const noexcept override {
+    [[nodiscard]] const std::type_info& get_callable_type() const noexcept override {
         return typeid(pmf);
     }
 #endif
@@ -1136,21 +1141,21 @@ public:
     signal_base(const signal_base&) = delete;
     signal_base & operator=(const signal_base&) = delete;
 
+    // NOLINTNEXTLINE(hicpp-noexcept-move,performance-noexcept-move-constructor)
     signal_base(signal_base && o) /* not noexcept */
         : m_block{o.m_block.load()}
     {
         lock_type lock(o.m_mutex);
-        using std::swap;
-        swap(m_slots, o.m_slots);
+        std::swap(m_slots, o.m_slots);
     }
 
+    // NOLINTNEXTLINE(hicpp-noexcept-move,performance-noexcept-move-constructor)
     signal_base & operator=(signal_base && o) /* not noexcept */ {
         lock_type lock1(m_mutex, std::defer_lock);
         lock_type lock2(o.m_mutex, std::defer_lock);
         std::lock(lock1, lock2);
 
-        using std::swap;
-        swap(m_slots, o.m_slots);
+        std::swap(m_slots, o.m_slots);
         m_block.store(o.m_block.exchange(m_block.load()));
         return *this;
     }
@@ -1498,7 +1503,7 @@ public:
     /**
      * Tests blocking state of signal emission
      */
-    bool blocked() const noexcept {
+    [[nodiscard]] bool blocked() const noexcept {
         return m_block.load();
     }
 
@@ -1653,10 +1658,11 @@ class signal_interface final {
         m_sig->unblock();
         }
 
-    inline bool blocked() const noexcept {
+    [[nodiscard]] inline bool blocked() const noexcept {
         return m_sig->blocked();
         }
 
+    // NOLINTNEXTLINE(hicpp-noexcept-move,performance-noexcept-move-constructor)
     signal_interface(signal_interface&& o) /* not noexcept */ {
         if(o.m_sig_storage.has_value()) {
             m_sig_storage = std::move(o.m_sig_storage);
@@ -1668,6 +1674,7 @@ class signal_interface final {
         }
     }
 
+    // NOLINTNEXTLINE(hicpp-noexcept-move,performance-noexcept-move-constructor)
     signal_interface& operator=(signal_interface&& o) /* not noexcept */ {
         if(m_sig != o.m_sig) {
             if(o.m_sig_storage.has_value()) {

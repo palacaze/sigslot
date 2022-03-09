@@ -11,9 +11,15 @@ Checks:
     cert-*,
     clang-analyzer-*,
     -cppcoreguidelines-*,
+    cppcoreguidelines-slicing,
+    cppcoreguidelines-pro-type-*,
+    -cppcoreguidelines-pro-type-reinterpret-cast,
+    -cppcoreguidelines-pro-type-union-access,
     concurrency-*,
     google-*,
     hicpp-*,
+    -hicpp-no-array-decay,
+    -hicpp-special-member-functions,
     misc-*,
     modernize-*,
     -modernize-use-default-member-init,
@@ -24,8 +30,10 @@ Checks:
     readability-*,
     readability-identifier-naming,
     -readability-magic-numbers,
-    -readability-named-parameter,
+    readability-named-parameter,
     -readability-redundant-access-specifiers,
+    # pairs of identical checks:
+    -hicpp-avoid-c-arrays,-modernize-avoid-c-arrays,
 '
 
 HeaderFilterRegex: '.*'
@@ -46,7 +54,7 @@ CheckOptions:
   - { key: readability-identifier-naming.StructCase,                value: lower_case }
   - { key: readability-identifier-naming.UnionCase,                 value: lower_case }
   - { key: readability-identifier-naming.TypedefCase,               value: lower_case }
-  - { key: readability-identifier-naming.TypedefSuffix,             value: _type }
+  - { key: readability-identifier-naming.TypedefSuffix,             value: _type      }
   - { key: readability-identifier-naming.FunctionCase,              value: lower_case }
   - { key: readability-identifier-naming.EnumCase,                  value: CamelCase  }
   - { key: readability-identifier-naming.ConstexprFunctionCase,     value: lower_case }
