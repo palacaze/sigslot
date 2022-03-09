@@ -14,7 +14,7 @@ struct foo {
 // Function objects can cope with default arguments and overloading.
 // It does not work with static and member functions.
 struct obj {
-    void operator()(float, int, bool, std::string &, int = 0) {
+    void operator()(float /*unused*/, int /*unused*/, bool /*unused*/, std::string & /*unused*/, int  /*unused*/= 0) {
         std::cout << "I was here\n";
     }
 
@@ -54,7 +54,7 @@ int main() {
     sig.connect(obj());
 
     float f = 1.F;
-    short i = 2;
+    int16_t i = 2;
     std::string s = "0";
 
     // emit a signal

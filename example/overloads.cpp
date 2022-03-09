@@ -11,19 +11,19 @@ constexpr auto overload(void (*ptr)(Args...)) {
 }
 
 struct obj {
-    void operator()(int) const {}
+    void operator()(int /*unused*/) const {}
     void operator()() {}
 };
 
 struct foo {
-    void bar(int) {}
+    void bar(int /*unused*/) {}
     void bar() {}
 
-    static void baz(int) {}
+    static void baz(int /*unused*/) {}
     static void baz() {}
 };
 
-void moo(int) {}
+void moo(int /*unused*/) {}
 void moo() {}
 
 int main() {

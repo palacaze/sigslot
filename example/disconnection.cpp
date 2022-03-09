@@ -9,7 +9,8 @@ int ti = 0;
 void f1() { ti += 1; }
 void f2() { ti += 1; }
 
-struct s {
+class s {
+public:
     virtual ~s() = default;
     void m1() const { ti += i; }
     void m2() const { ti += i; }
@@ -17,14 +18,17 @@ struct s {
 
     virtual void v() = 0;
 
+private:
     const int i{1};
 };
 
-struct b {
+class b {
+public:
     virtual ~b() = default;
 };
 
-struct d : s, b {
+class d : public s, b {
+public:
     void v() override { ti += 1; }
 };
 

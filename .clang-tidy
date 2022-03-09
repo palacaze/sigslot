@@ -22,7 +22,7 @@ Checks:
     performance-*,
     portability-*,
     readability-*,
-    -readability-identifier-naming,
+    readability-identifier-naming,
     -readability-magic-numbers,
     -readability-named-parameter,
     -readability-redundant-access-specifiers,

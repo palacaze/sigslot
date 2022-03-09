@@ -14,7 +14,7 @@ int main() {
 
     sig.connect(printer("Second"), 1);
     //FIXME: sig.connect(printer("Last"), std::numeric_limits<sigslot::group_id>::max());
-    // TODO: error: invalid use of 'using group_id = int'
+    // TODO(klein_cl): error: invalid use of 'using group_id = int'
     sig.connect(printer("Last"), std::numeric_limits<int>::max());
     sig.connect(printer("Third"), 2);
     sig.connect(printer("First"), 0);
