@@ -36,7 +36,13 @@ struct d : b1 {
 
 struct e : b1, c {
     static void sm() { sum++; }
-    void m() { sum++; }
+    void m() const { sum++; }
+    void vm() override { sum++; }
+};
+
+struct f : virtual b1 {
+    static void sm() { sum++; }
+    void m() const { sum++; }
     void vm() override { sum++; }
 };
 
@@ -47,6 +53,7 @@ int main(int, char **) {
     auto sb2 = std::make_shared<b2>();
     auto sd = std::make_shared<d>();
     auto se = std::make_shared<e>();
+    auto sf = std::make_shared<f>();
 
     sig.connect(&b1::sm);
     sig.connect(&b1::m, sb1);
@@ -60,9 +67,12 @@ int main(int, char **) {
     sig.connect(&e::sm);
     sig.connect(&e::m, se);
     sig.connect(&e::vm, se);
+    sig.connect(&f::sm);
+    sig.connect(&f::m, sf);
+    sig.connect(&f::vm, sf);
 
     sig();
-    assert(sum == 12);
+    assert(sum == 15);
 
 #ifdef SIGSLOT_RTTI_ENABLED
     size_t n = 0;
@@ -89,6 +99,12 @@ int main(int, char **) {
     n = sig.disconnect(&e::m);
     assert(n == 1);
     n = sig.disconnect(&e::vm);
+    assert(n == 1);
+    n = sig.disconnect(&f::sm);
+    assert(n == 1);
+    n = sig.disconnect(&f::m);
+    assert(n == 1);
+    n = sig.disconnect(&f::vm);
     assert(n == 1);
 #endif
 

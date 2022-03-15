@@ -1,17 +1,12 @@
 #pragma once
 #include <atomic>
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <type_traits>
 #include <utility>
 #include <thread>
 #include <vector>
-
-#if defined __clang__ || (__GNUC__ > 5)
-#define SIGSLOT_MAY_ALIAS __attribute__((__may_alias__))
-#else
-#define SIGSLOT_MAY_ALIAS
-#endif
 
 #if defined(__GXX_RTTI) || defined(__cpp_rtti) || defined(_CPPRTTI)
 #define SIGSLOT_RTTI_ENABLED 1
@@ -158,14 +153,18 @@ namespace detail {
  */
 namespace mock {
 
-struct a { virtual ~a() = default; void f(); virtual void g(); };
-struct b { virtual ~b() = default; virtual void h(); };
-struct c : a, b { void g() override; };
+struct a { virtual ~a() = default; void f(); virtual void g(); static void h(); };
+struct b { virtual ~b() = default; void f(); virtual void g(); };
+struct c : a, b { void f(); void g() override; };
+struct d : virtual a { void g() override; };
 
 union fun_types {
-    decltype(&c::g) m;
-    decltype(&a::g) v;
-    decltype(&a::f) d;
+    decltype(&d::g) dm;
+    decltype(&c::g) mm;
+    decltype(&c::g) mvm;
+    decltype(&a::f) m;
+    decltype(&a::g) vm;
+    decltype(&a::h) s;
     void (*f)();
     void *o;
  };
@@ -173,46 +172,45 @@ union fun_types {
 } // namespace mock
 
 /*
- * This union is used to compare function pointers
- * Generic callables cannot be compared. Here we compare pointers but there is
- * no guarantee that this always works.
+ * This struct is used to store function pointers.
+ * This is needed for slot disconnection by function pointer.
+ * It assumes the underlying implementation to be trivially copiable.
  */
-union SIGSLOT_MAY_ALIAS func_ptr {
-    void* value() {
-        return &data[0];
-    }
-
-    const void* value() const {
-        return &data[0];
-    }
-
-    template <typename T>
-    T& value() {
-        return *static_cast<T*>(value());
+struct func_ptr {
+    func_ptr()
+        : sz{0}
+    {
+        std::uninitialized_fill(std::begin(data), std::end(data), '\0');
     }
 
     template <typename T>
-    const T& value() const {
-        return *static_cast<const T*>(value());
+    void store(const T &t) {
+        const auto *b = reinterpret_cast<const char*>(&t);
+        sz = sizeof(T);
+        std::memcpy(data, b, sz);
     }
 
-    inline explicit operator bool() const {
-        return value() != nullptr;
+    template <typename T>
+    const T* as() const {
+        if (sizeof(T) != sz) {
+            return nullptr;
+        }
+        return reinterpret_cast<const T*>(data);
     }
 
-    inline bool operator==(const func_ptr &o) const {
-        return std::equal(std::begin(data), std::end(data), std::begin(o.data));
-    }
-
-    mock::fun_types _;
-    char data[sizeof(mock::fun_types)];
+private:
+    size_t sz;
+    alignas(sizeof(mock::fun_types)) char data[sizeof(mock::fun_types)];
 };
 
 
 template <typename T, typename = void>
 struct function_traits {
-    static void ptr(const T &/*t*/, func_ptr &d) {
-        d.value<std::nullptr_t>() = nullptr;
+    static void ptr(const T &/*t*/, func_ptr &/*d*/) {
+    }
+
+    static bool eq(const T &/*t*/, const func_ptr &/*d*/) {
+        return false;
     }
 
     static constexpr bool is_disconnectable = false;
@@ -222,7 +220,12 @@ struct function_traits {
 template <typename T>
 struct function_traits<T, std::enable_if_t<trait::is_func_v<T>>> {
     static void ptr(T &t, func_ptr &d) {
-        d.value<T*>() = &t;
+        d.store(&t);
+    }
+
+    static bool eq(T &t, const func_ptr &d) {
+        const auto *r = d.as<const T*>();
+        return r && *r == &t;
     }
 
     static constexpr bool is_disconnectable = true;
@@ -232,7 +235,11 @@ struct function_traits<T, std::enable_if_t<trait::is_func_v<T>>> {
 template <typename T>
 struct function_traits<T*, std::enable_if_t<trait::is_func_v<T>>> {
     static void ptr(T *t, func_ptr &d) {
-        d.value<T*>() = t;
+        function_traits<T>::ptr(*t, d);
+    }
+    
+    static bool eq(T *t, const func_ptr &d) {
+        return function_traits<T>::eq(*t, d);
     }
 
     static constexpr bool is_disconnectable = true;
@@ -241,8 +248,13 @@ struct function_traits<T*, std::enable_if_t<trait::is_func_v<T>>> {
 
 template <typename T>
 struct function_traits<T, std::enable_if_t<trait::is_pmf_v<T>>> {
-    static void ptr(const T &t, func_ptr &d) {
-        d.value<T>() = t;
+    static void ptr(T t, func_ptr &d) {
+        d.store(t);
+    }
+
+    static bool eq(T t, const func_ptr &d) {
+        const auto *r = d.as<const T>();
+        return r && *r == t;
     }
 
     static constexpr bool is_disconnectable = trait::with_rtti;
@@ -258,6 +270,10 @@ struct function_traits<T, std::enable_if_t<trait::has_call_operator_v<T>>> {
         function_traits<call_type>::ptr(&T::operator(), d);
     }
 
+    static bool eq(const T &/*t*/, const func_ptr &d) {
+        return function_traits<call_type>::eq(&T::operator(), d);
+    }
+
     static constexpr bool is_disconnectable = function_traits<call_type>::is_disconnectable;
     static constexpr bool must_check_object = function_traits<call_type>::must_check_object;
 };
@@ -265,9 +281,13 @@ struct function_traits<T, std::enable_if_t<trait::has_call_operator_v<T>>> {
 template <typename T>
 func_ptr get_function_ptr(const T &t) {
     func_ptr d;
-    std::uninitialized_fill(std::begin(d.data), std::end(d.data), '\0');
-    function_traits<std::decay_t<T>>::ptr(t, d);
+    function_traits<std::decay_t<T>>::ptr(std::decay_t<T>(t), d);
     return d;
+}
+
+template <typename T>
+bool eq_function_ptr(const T& t, const func_ptr &d) {
+    return function_traits<std::decay_t<T>>::eq(std::decay_t<T>(t), d);
 }
 
 /*
@@ -784,9 +804,8 @@ public:
     // check if we are storing callable c
     template <typename C>
     bool has_callable(const C &c) const {
-        auto cp = get_function_ptr(c);
         auto p = get_callable();
-        return cp && p && cp == p;
+        return eq_function_ptr(c, p);
     }
 
     template <typename C>
@@ -1609,3 +1628,4 @@ template <typename... T>
 using signal = signal_base<std::mutex, T...>;
 
 } // namespace sigslot
+
