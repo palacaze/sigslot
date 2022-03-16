@@ -199,8 +199,8 @@ struct func_ptr {
     }
 
 private:
-    size_t sz;
     alignas(sizeof(mock::fun_types)) char data[sizeof(mock::fun_types)];
+    size_t sz;
 };
 
 
