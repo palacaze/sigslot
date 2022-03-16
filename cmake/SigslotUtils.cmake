@@ -18,6 +18,9 @@ endif()
 if (SIGSLOT_COMPILER_CLANG OR SIGSLOT_COMPILER_GCC)
     set(SIGSLOT_COMPILER_CLANG_OR_GCC ON)
 endif()
+if (SIGSLOT_COMPILER_CLANG OR SIGSLOT_COMPILER_CLANGCL)
+    set(SIGSLOT_COMPILER_CLANG_OR_CLANGCL ON)
+endif()
 if (SIGSLOT_COMPILER_CLANG_OR_GCC OR SIGSLOT_COMPILER_CLANGCL)
     set(SIGSLOT_COMPILER_CLANG_OR_CLANGCL_OR_GCC ON)
 endif()
@@ -33,12 +36,20 @@ target_compile_options(Sigslot_CommonWarnings INTERFACE
 
 add_library(Sigslot_ManyWarnings INTERFACE)
 target_compile_options(Sigslot_ManyWarnings INTERFACE
-    $<$<BOOL:${SIGSLOT_COMPILER_CLANG_OR_CLANGCL_OR_GCC}>:
-        -Weverything;-Wno-c++98-compat;-Wno-c++98-compat-pedantic;-Wno-unused-macros;
-        -Wno-newline-eof;-Wno-exit-time-destructors;-Wno-global-constructors;
-        -Wno-gnu-zero-variadic-macro-arguments;-Wno-documentation;-Wno-missing-prototypes;
-        -Wno-padded;-Wno-weak-vtables;-Wno-c++17-extensions;-Wno-shadow-field-in-constructor;
-        -Wno-return-std-move-in-c++11>
+    $<$<BOOL:${SIGSLOT_COMPILER_CLANG_OR_CLANGCL}>:
+        -Weverything; -Wno-unused-macros;-Wno-newline-eof;-Wno-exit-time-destructors;
+        -Wno-global-constructors;-Wno-gnu-zero-variadic-macro-arguments;-Wno-documentation;
+        -Wno-shadow-field-in-constructor;-Wno-missing-prototypes;-Wno-reserved-identifier;
+        -Wno-documentation-unknown-command;-Wno-ctad-maybe-unsupported;-Wno-c++98-compat;
+        -Wno-c++98-compat-pedantic;-Wno-weak-vtables;-Wno-padded>
+    $<$<BOOL:${SIGSLOT_COMPILER_GCC}>:
+        -Wcast-qual;-Wconversion-null;-Wmissing-declarations;-Woverlength-strings;
+        -Wpointer-arith;-Wunused-local-typedefs;-Wunused-result;-Wvarargs;-Wvla;
+        -Wwrite-strings;-Wconversion;-Wsign-conversion;-Wodr;-Wpedantic;;-pedantic;
+        -Wcast-align;-Wctor-dtor-privacy;-Wdisabled-optimization;-Wformat=2;-Winit-self;
+        -Wlogical-op;-Wmissing-include-dirs;-Wold-style-cast;-Woverloaded-virtual;
+        -Wredundant-decls;-Wno-shadow;-Wsign-promo;-Wstrict-null-sentinel;-Wundef;
+        -fdiagnostics-show-option;-Wno-return-std-move-in-c++11;-Wno-missing-declarations>
     $<$<BOOL:${SIGSLOT_COMPILER_CLANG_OR_GCC}>:-fdiagnostics-color=always;-pipe>
     $<$<CXX_COMPILER_ID:MSVC>:/W4>
 )
