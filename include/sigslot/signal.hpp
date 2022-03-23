@@ -281,13 +281,13 @@ struct function_traits<T, std::enable_if_t<trait::has_call_operator_v<T>>> {
 template <typename T>
 func_ptr get_function_ptr(const T &t) {
     func_ptr d;
-    function_traits<std::decay_t<T>>::ptr(std::decay_t<T>(t), d);
+    function_traits<std::decay_t<T>>::ptr(t, d);
     return d;
 }
 
 template <typename T>
 bool eq_function_ptr(const T& t, const func_ptr &d) {
-    return function_traits<std::decay_t<T>>::eq(std::decay_t<T>(t), d);
+    return function_traits<std::decay_t<T>>::eq(t, d);
 }
 
 /*
