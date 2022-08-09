@@ -1200,7 +1200,9 @@ public:
 
         for (const auto &group : detail::cow_read(ref)) {
             for (const auto &s : group.slts) {
-                s->operator()(a...);
+                try {
+                    s->operator()(a...);
+                catch (...) {}
             }
         }
     }
