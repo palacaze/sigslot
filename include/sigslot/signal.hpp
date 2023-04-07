@@ -1335,6 +1335,7 @@ public:
         auto s = make_slot<slot_t>(std::forward<Pmf>(pmf), w, gid);
         connection conn(s);
         add_slot(std::move(s));
+        disconnect_all_dead();
         return conn;
     }
 
@@ -1365,6 +1366,7 @@ public:
         auto s = make_slot<slot_t>(std::forward<Callable>(c), w, gid);
         connection conn(s);
         add_slot(std::move(s));
+        disconnect_all_dead();
         return conn;
     }
 
@@ -1472,6 +1474,16 @@ public:
     void disconnect_all() {
         lock_type lock(m_mutex);
         clear();
+    }
+
+    /**
+     * Disconnects all the slots with nullptr objects
+     * Safety: Thread safety depends on locking policy
+     */
+    void disconnect_all_dead() {
+        disconnect_if([&] (const auto &s) {
+            return s->has_object(nullptr);
+        });
     }
 
     /**
