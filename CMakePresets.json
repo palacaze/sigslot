@@ -1,0 +1,255 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 25,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "base",
+            "description": "hidden base preset containing common setup",
+            "hidden": true,
+            "generator": "Ninja Multi-Config",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_CONFIGURATION_TYPES": "Debug;Release;RelWithDebInfo",
+                "SIGSLOT_ENABLE_MANY_WARNINGS": true,
+                "SIGSLOT_COMPILE_TESTS": true,
+                "SIGSLOT_COMPILE_EXAMPLES": true
+            }
+        },
+        {
+            "name": "gcc",
+            "hidden": true,
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "gcc",
+                "CMAKE_CXX_COMPILER": "g++"
+            }
+        },
+        {
+            "name": "clang",
+            "hidden": true,
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++"
+            }
+        },
+        {
+            "name": "windows",
+            "displayName": "Windows x64 MinGW",
+            "description": "Windows build MinGW with the first toochain in PATH",
+            "inherits": "base",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "linux",
+            "displayName": "Linux",
+            "description": "Linux build with the first toochain in PATH",
+            "inherits": "base",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
+        },
+        {
+            "name": "windows-gcc",
+            "displayName": "Windows x64 MinGW GCC",
+            "inherits": ["gcc", "windows"]
+        },
+        {
+            "name": "windows-clang",
+            "displayName": "Windows x64 MinGW Clang",
+            "inherits": ["clang", "windows"]
+        },
+        {
+            "name": "linux-gcc",
+            "displayName": "Linux x64 GCC",
+            "inherits": ["gcc", "linux"]
+        },
+        {
+            "name": "linux-clang",
+            "displayName": "Linux x64 Clang",
+            "inherits": ["clang", "linux"]
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "windows",
+            "hidden": true,
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            },
+            "targets": [
+                "sigslot-examples",
+                "sigslot-tests"
+            ]
+        },
+        {
+            "name": "linux",
+            "hidden": true,
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            },
+            "targets": [
+                "sigslot-examples",
+                "sigslot-tests"
+            ]
+        },
+        {
+            "name": "windows-gcc-rel",
+            "displayName": "Windows x64 MinGW GCC Release",
+            "inherits": "windows",
+            "configurePreset": "windows-gcc",
+            "configuration": "Release"
+        },
+        {
+            "name": "windows-gcc-prof",
+            "displayName": "Windows x64 MinGW GCC RelWithDebInfo",
+            "inherits": "windows",
+            "configurePreset": "windows-gcc",
+            "configuration": "RelWithDebInfo"
+        },
+        {
+            "name": "windows-gcc-deb",
+            "displayName": "Windows x64 MinGW GCC Debug",
+            "inherits": "windows",
+            "configurePreset": "windows-gcc",
+            "configuration": "Debug"
+        },
+        {
+            "name": "windows-clang-rel",
+            "displayName": "Windows x64 MinGW Clang Release",
+            "inherits": "windows",
+            "configurePreset": "windows-clang",
+            "configuration": "Release"
+        },
+        {
+            "name": "windows-clang-prof",
+            "displayName": "Windows x64 MinGW Clang RelWithDebInfo",
+            "inherits": "windows",
+            "configurePreset": "windows-clang",
+            "configuration": "RelWithDebInfo"
+        },
+        {
+            "name": "windows-clang-deb",
+            "displayName": "Windows x64 MinGW Clang Debug",
+            "inherits": "windows",
+            "configurePreset": "windows-clang",
+            "configuration": "Debug"
+        },
+        {
+            "name": "linux-gcc-rel",
+            "displayName": "Linux x64 GCC Release",
+            "inherits": "linux",
+            "configurePreset": "linux-gcc",
+            "configuration": "Release"
+        },
+        {
+            "name": "linux-gcc-prof",
+            "displayName": "Linux x64 GCC RelWithDebInfo",
+            "inherits": "linux",
+            "configurePreset": "linux-gcc",
+            "configuration": "RelWithDebInfo"
+        },
+        {
+            "name": "linux-gcc-deb",
+            "displayName": "Linux x64 GCC Debug",
+            "inherits": "linux",
+            "configurePreset": "linux-gcc",
+            "configuration": "Debug"
+        },
+        {
+            "name": "linux-clang-rel",
+            "displayName": "Linux x64 Clang Release",
+            "inherits": "linux",
+            "configurePreset": "linux-clang",
+            "configuration": "Release"
+        },
+        {
+            "name": "linux-clang-prof",
+            "displayName": "Linux x64 Clang RelWithDebInfo",
+            "inherits": "linux",
+            "configurePreset": "linux-clang",
+            "configuration": "RelWithDebInfo"
+        },
+        {
+            "name": "linux-clang-deb",
+            "displayName": "Linux x64 Clang Debug",
+            "inherits": "linux",
+            "configurePreset": "linux-clang",
+            "configuration": "Debug"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "windows",
+            "hidden": true,
+            "configurePreset": "windows-gcc",
+            "output": { "outputOnFailure": true },
+            "execution": { "noTestsAction": "ignore", "stopOnFailure": true },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "linux",
+            "hidden": true,
+            "configurePreset": "linux-gcc",
+            "output": { "outputOnFailure": true },
+            "execution": { "noTestsAction": "ignore", "stopOnFailure": true },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
+        },
+        {
+            "name": "windows-deb",
+            "displayName": "Windows Debug",
+            "inherits": "windows",
+            "configuration": "Debug"
+        },
+        {
+            "name": "windows-prof",
+            "displayName": "Windows RelWithDebInfo",
+            "inherits": "windows",
+            "configuration": "RelWithDebInfo"
+        },
+        {
+            "name": "windows-rel",
+            "displayName": "Windows Release",
+            "inherits": "windows",
+            "configuration": "Release"
+        },
+        {
+            "name": "linux-deb",
+            "displayName": "Linux Debug",
+            "inherits": "linux",
+            "configuration": "Debug"
+        },
+        {
+            "name": "linux-prof",
+            "displayName": "Linux RelWithDebInfo",
+            "inherits": "linux",
+            "configuration": "RelWithDebInfo"
+        },
+        {
+            "name": "linux-rel",
+            "displayName": "Linux Release",
+            "inherits": "linux",
+            "configuration": "Release"
+        }
+    ]
+}
