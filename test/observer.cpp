@@ -77,6 +77,33 @@ void test_observer_signals() {
 }
 
 template <typename T, template <typename...> class SIG_T>
+void test_observer_signals_heap() {
+    int sum = 0;
+    SIG_T<int &> sig;
+
+    {
+        auto *p1 = new T;
+        sig.connect(&T::f1, p1);
+        sig(sum);
+        assert(sum == 1);
+        {
+            auto *p2 = new T;
+            sig.connect(&T::f1, p2);
+            sig(sum);
+            assert(sum == 3);
+            delete p2;
+        }
+        sig(sum);
+        assert(sum == 4);
+        delete p1;
+    }
+
+    sig(sum);
+    assert(sum == 4);
+}
+
+
+template <typename T, template <typename...> class SIG_T>
 void test_observer_signals_shared() {
     int sum = 0;
     SIG_T<int &> sig;
@@ -151,6 +178,8 @@ int main()
     test_observer<s_st, sigslot::signal_st>();
     test_observer_signals<s, sigslot::signal>();
     test_observer_signals<s_st, sigslot::signal_st>();
+    test_observer_signals_heap<s, sigslot::signal>();
+    test_observer_signals_heap<s_st, sigslot::signal_st>();
     test_observer_signals_shared<s, sigslot::signal>();
     test_observer_signals_shared<s_st, sigslot::signal_st>();
     test_observer_signals_list<s, sigslot::signal>();

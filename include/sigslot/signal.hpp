@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <type_traits>
@@ -7,18 +8,15 @@
 #include <thread>
 #include <vector>
 
-#if defined __clang__ || (__GNUC__ > 5)
-#define SIGSLOT_MAY_ALIAS __attribute__((__may_alias__))
-#else
-#define SIGSLOT_MAY_ALIAS
-#endif
-
 #if defined(__GXX_RTTI) || defined(__cpp_rtti) || defined(_CPPRTTI)
 #define SIGSLOT_RTTI_ENABLED 1
 #include <typeinfo>
 #endif
 
 namespace sigslot {
+
+template <typename, typename...>
+class signal_base;
 
 namespace detail {
 
@@ -95,6 +93,13 @@ template <typename T>
 struct is_weak_ptr_compatible<T, void_t<decltype(to_weak(std::declval<T>()))>>
     : is_weak_ptr<decltype(to_weak(std::declval<T>()))> {};
 
+template <typename...>
+struct is_signal : std::false_type {};
+
+template <typename L, typename... T>
+struct is_signal<signal_base<L, T...>>
+    : std::true_type {};
+
 } // namespace detail
 
 static constexpr bool with_rtti =
@@ -129,12 +134,12 @@ constexpr bool is_pmf_v = std::is_member_function_pointer<T>::value;
 
 template <typename T>
 constexpr bool is_observer_v = std::is_base_of<::sigslot::detail::observer_type,
-                                               std::remove_pointer_t<T>>::value;
+                                               std::remove_pointer_t<std::remove_reference_t<T>>>::value;
+
+template <typename S>
+constexpr bool is_signal_v = detail::is_signal<S>::value;
 
 } // namespace trait
-
-template <typename, typename...>
-class signal_base;
 
 /**
  * A group_id is used to identify a group of slots
@@ -158,14 +163,18 @@ namespace detail {
  */
 namespace mock {
 
-struct a { virtual ~a() = default; void f(); virtual void g(); };
-struct b { virtual ~b() = default; virtual void h(); };
-struct c : a, b { void g() override; };
+struct a { virtual ~a() = default; void f(); virtual void g(); static void h(); };
+struct b { virtual ~b() = default; void f(); virtual void g(); };
+struct c : a, b { void f(); void g() override; };
+struct d : virtual a { void g() override; };
 
 union fun_types {
-    decltype(&c::g) m;
-    decltype(&a::g) v;
-    decltype(&a::f) d;
+    decltype(&d::g) dm;
+    decltype(&c::g) mm;
+    decltype(&c::g) mvm;
+    decltype(&a::f) m;
+    decltype(&a::g) vm;
+    decltype(&a::h) s;
     void (*f)();
     void *o;
  };
@@ -173,46 +182,45 @@ union fun_types {
 } // namespace mock
 
 /*
- * This union is used to compare function pointers
- * Generic callables cannot be compared. Here we compare pointers but there is
- * no guarantee that this always works.
+ * This struct is used to store function pointers.
+ * This is needed for slot disconnection by function pointer.
+ * It assumes the underlying implementation to be trivially copiable.
  */
-union SIGSLOT_MAY_ALIAS func_ptr {
-    void* value() {
-        return &data[0];
-    }
-
-    const void* value() const {
-        return &data[0];
-    }
-
-    template <typename T>
-    T& value() {
-        return *static_cast<T*>(value());
+struct func_ptr {
+    func_ptr()
+        : sz{0}
+    {
+        std::uninitialized_fill(std::begin(data), std::end(data), '\0');
     }
 
     template <typename T>
-    const T& value() const {
-        return *static_cast<const T*>(value());
+    void store(const T &t) {
+        const auto *b = reinterpret_cast<const char*>(&t);
+        sz = sizeof(T);
+        std::memcpy(data, b, sz);
     }
 
-    inline explicit operator bool() const {
-        return value() != nullptr;
+    template <typename T>
+    const T* as() const {
+        if (sizeof(T) != sz) {
+            return nullptr;
+        }
+        return reinterpret_cast<const T*>(data);
     }
 
-    inline bool operator==(const func_ptr &o) const {
-        return std::equal(std::begin(data), std::end(data), std::begin(o.data));
-    }
-
-    mock::fun_types _;
-    char data[sizeof(mock::fun_types)];
+private:
+    alignas(sizeof(mock::fun_types)) char data[sizeof(mock::fun_types)];
+    size_t sz;
 };
 
 
 template <typename T, typename = void>
 struct function_traits {
-    static void ptr(const T &/*t*/, func_ptr &d) {
-        d.value<std::nullptr_t>() = nullptr;
+    static void ptr(const T &/*t*/, func_ptr &/*d*/) {
+    }
+
+    static bool eq(const T &/*t*/, const func_ptr &/*d*/) {
+        return false;
     }
 
     static constexpr bool is_disconnectable = false;
@@ -222,7 +230,12 @@ struct function_traits {
 template <typename T>
 struct function_traits<T, std::enable_if_t<trait::is_func_v<T>>> {
     static void ptr(T &t, func_ptr &d) {
-        d.value<T*>() = &t;
+        d.store(&t);
+    }
+
+    static bool eq(T &t, const func_ptr &d) {
+        const auto *r = d.as<const T*>();
+        return r && *r == &t;
     }
 
     static constexpr bool is_disconnectable = true;
@@ -232,7 +245,11 @@ struct function_traits<T, std::enable_if_t<trait::is_func_v<T>>> {
 template <typename T>
 struct function_traits<T*, std::enable_if_t<trait::is_func_v<T>>> {
     static void ptr(T *t, func_ptr &d) {
-        d.value<T*>() = t;
+        function_traits<T>::ptr(*t, d);
+    }
+    
+    static bool eq(T *t, const func_ptr &d) {
+        return function_traits<T>::eq(*t, d);
     }
 
     static constexpr bool is_disconnectable = true;
@@ -241,8 +258,13 @@ struct function_traits<T*, std::enable_if_t<trait::is_func_v<T>>> {
 
 template <typename T>
 struct function_traits<T, std::enable_if_t<trait::is_pmf_v<T>>> {
-    static void ptr(const T &t, func_ptr &d) {
-        d.value<T>() = t;
+    static void ptr(T t, func_ptr &d) {
+        d.store(t);
+    }
+
+    static bool eq(T t, const func_ptr &d) {
+        const auto *r = d.as<const T>();
+        return r && *r == t;
     }
 
     static constexpr bool is_disconnectable = trait::with_rtti;
@@ -258,6 +280,10 @@ struct function_traits<T, std::enable_if_t<trait::has_call_operator_v<T>>> {
         function_traits<call_type>::ptr(&T::operator(), d);
     }
 
+    static bool eq(const T &/*t*/, const func_ptr &d) {
+        return function_traits<call_type>::eq(&T::operator(), d);
+    }
+
     static constexpr bool is_disconnectable = function_traits<call_type>::is_disconnectable;
     static constexpr bool must_check_object = function_traits<call_type>::must_check_object;
 };
@@ -265,9 +291,13 @@ struct function_traits<T, std::enable_if_t<trait::has_call_operator_v<T>>> {
 template <typename T>
 func_ptr get_function_ptr(const T &t) {
     func_ptr d;
-    std::uninitialized_fill(std::begin(d.data), std::end(d.data), '\0');
     function_traits<std::decay_t<T>>::ptr(t, d);
     return d;
+}
+
+template <typename T>
+bool eq_function_ptr(const T& t, const func_ptr &d) {
+    return function_traits<std::decay_t<T>>::eq(t, d);
 }
 
 /*
@@ -497,6 +527,19 @@ inline std::shared_ptr<B> make_shared(Arg && ... arg) {
     return std::static_pointer_cast<B>(std::make_shared<D>(std::forward<Arg>(arg)...));
 }
 #endif
+
+
+// Adapt a signal into a cheap function object, for easy signal chaining
+template <typename SigT>
+struct signal_wrapper {
+    template <typename... U>
+    void operator()(U && ...u) {
+        (*m_sig)(std::forward<U>(u)...);
+    }
+
+    SigT *m_sig{};
+};
+
 
 /* slot_state holds slot type independent state, to be used to interact with
  * slots indirectly through connection and scoped_connection objects.
@@ -784,9 +827,8 @@ public:
     // check if we are storing callable c
     template <typename C>
     bool has_callable(const C &c) const {
-        auto cp = get_function_ptr(c);
         auto p = get_callable();
-        return cp && p && cp == p;
+        return eq_function_ptr(c, p);
     }
 
     template <typename C>
@@ -1590,6 +1632,30 @@ private:
     std::atomic<bool> m_block;
 };
 
+
+/**
+ * Freestanding connect function that defers to the `signal_base::connect` member.
+ */
+template <typename Lockable, typename Arg, typename... T, typename ...Args>
+std::enable_if_t<!trait::is_signal_v<std::decay_t<Arg>>, connection>
+connect(signal_base<Lockable, T...> &sig, Arg &&arg, Args && ...args)
+{
+    return sig.connect(std::forward<Arg>(arg), std::forward<Args>(args)...);
+}
+
+/**
+ * Freestanding connect function that chains one signal to another.
+ */
+template <typename Lockable1, typename Lockable2, typename... T1, typename... T2, typename... Args>
+connection connect(signal_base<Lockable1, T1...> &sig1,
+                   signal_base<Lockable2, T2...> &sig2,
+                   Args && ...args)
+{
+    return sig1.connect(detail::signal_wrapper<signal_base<Lockable2, T2...>>{std::addressof(sig2)},
+                        std::forward<Args>(args)...);
+}
+
+
 /**
  * Specialization of signal_base to be used in single threaded contexts.
  * Slot connection, disconnection and signal emission are not thread-safe.
@@ -1609,3 +1675,4 @@ template <typename... T>
 using signal = signal_base<std::mutex, T...>;
 
 } // namespace sigslot
+

@@ -138,6 +138,9 @@ int main() {
     sig.connect(lambda);
     sig.connect(gen_lambda);
 
+    // a free connect() function is also available
+    sigslot::connect(sig, f);
+
     // emit a signal
     sig();
 }
@@ -487,14 +490,14 @@ struct s_mt : sigslot::observer {
         // in multithreaded contexts.
         this->disconnect_all();
     }
-    
+
     void f(int i) { sum += i; }
 };
 
 int main() {
     sum = 0;
     signal<int> sig;
-    
+
     {
         // Lifetime of object instance p is tracked
         s p;
@@ -503,7 +506,7 @@ int main() {
         sig.connect(&s_mt::f, &pm);
         sig(1);     // sum == 2
     }
-    
+
     // The slots got disconnected at instance destruction
     sig(1);         // sum == 2
 }
@@ -624,6 +627,27 @@ int main() {
     sig.connect([] { std::puts("Last"); }, std::numeric_limits<sigslot::group_id>::max());
     sig.connect([] { std::puts("First"); }, -10);
     sig();
+
+    return 0;
+}
+```
+
+### Signal chaining
+
+The freestanding `sigslot::connect()` function can be used to connect a signal
+to another with compatible arguments.
+
+```cpp
+#include <sigslot/signal.hpp>
+#include <iostream>
+
+int main() {
+    sigslot::signal<int> sig1;
+    sigslot::signal<double> sig2;
+
+    sigslot::connect(sig1, sig2);
+    sigslot::connect(sig2, [] (double d) { std::cout << "got " << d << std::endl; });
+    sig(1);
 
     return 0;
 }

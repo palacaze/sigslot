@@ -13,10 +13,10 @@
 namespace sigslot {
 namespace detail {
 
-// a weak pointer adater to allow QObject life tracking
+// a weak pointer adapter to allow QObject life tracking
 template <typename T>
-struct qpointer_adater {
-    qpointer_adater(T *o) noexcept
+struct qpointer_adapter {
+    qpointer_adapter(T *o) noexcept
         : m_ptr{o}
     {}
 
@@ -41,8 +41,8 @@ private:
 
 // a wrapper that exposes the right concepts for QWeakPointer
 template <typename T>
-struct qweakpointer_adater {
-    qweakpointer_adater(QWeakPointer<T> o) noexcept
+struct qweakpointer_adapter {
+    qweakpointer_adapter(QWeakPointer<T> o) noexcept
         : m_ptr{std::move(o)}
     {}
 
@@ -69,18 +69,18 @@ private:
 QT_BEGIN_NAMESPACE
 
 template <typename T>
-std::enable_if_t<std::is_base_of<QObject, T>::value, sigslot::detail::qpointer_adater<T>>
+std::enable_if_t<std::is_base_of<QObject, T>::value, sigslot::detail::qpointer_adapter<T>>
 to_weak(T *p) {
     return {p};
 }
 
 template <typename T>
-sigslot::detail::qweakpointer_adater<T> to_weak(QWeakPointer<T> p) {
+sigslot::detail::qweakpointer_adapter<T> to_weak(QWeakPointer<T> p) {
     return {p};
 }
 
 template <typename T>
-sigslot::detail::qweakpointer_adater<T> to_weak(QSharedPointer<T> p) {
+sigslot::detail::qweakpointer_adapter<T> to_weak(QSharedPointer<T> p) {
     return {p};
 }
 
