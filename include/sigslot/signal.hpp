@@ -400,53 +400,50 @@ private:
 };
 
 /**
+ * std::make_shared instantiates a lot a templates, and makes both compilation time
+ * and executable size far bigger than they need to be. We offer a make_shared
+ * equivalent that will avoid most instantiations with the following tradeoffs:
+ * - Not exception safe,
+ * - Allocates a separate control block, and will thus make the code slower.
+ */
+#ifdef SIGSLOT_REDUCE_COMPILE_TIME
+template <typename B, typename D, typename ...Arg>
+inline std::shared_ptr<B> make_shared(Arg && ... arg) {
+    return std::shared_ptr<B>(static_cast<B*>(new D(std::forward<Arg>(arg)...)));
+}
+#else
+template <typename B, typename D, typename ...Arg>
+inline std::shared_ptr<B> make_shared(Arg && ... arg) {
+    return std::static_pointer_cast<B>(std::make_shared<D>(std::forward<Arg>(arg)...));
+}
+#endif
+
+/**
  * A simple copy on write container that will be used to improve slot lists
  * access efficiency in a multithreaded context.
  */
 template <typename T>
 class copy_on_write {
-    struct payload {
-        payload() = default;
-
-        template <typename... Args>
-        explicit payload(Args && ...args)
-            : value(std::forward<Args>(args)...)
-        {}
-
-        std::atomic<std::size_t> count{1};
-        T value;
-    };
-
 public:
     using element_type = T;
 
     copy_on_write()
-        : m_data(new payload)
+        : m_data(make_shared<T, T>())
     {}
 
     template <typename U>
     explicit copy_on_write(U && x, std::enable_if_t<!std::is_same<std::decay_t<U>,
                            copy_on_write>::value>* = nullptr)
-        : m_data(new payload(std::forward<U>(x)))
+        : m_data(make_shared<T, T>(std::forward<U>(x)))
     {}
 
     copy_on_write(const copy_on_write &x) noexcept
         : m_data(x.m_data)
-    {
-        ++m_data->count;
-    }
+    {}
 
     copy_on_write(copy_on_write && x) noexcept
-        : m_data(x.m_data)
-    {
-        x.m_data = nullptr;
-    }
-
-    ~copy_on_write() {
-        if (m_data && (--m_data->count == 0)) {
-            delete m_data;
-        }
-    }
+        : m_data(std::move(x.m_data))
+    {}
 
     copy_on_write& operator=(const copy_on_write &x) noexcept {
         if (&x != this) {
@@ -465,11 +462,11 @@ public:
         if (!unique()) {
             *this = copy_on_write(read());
         }
-        return m_data->value;
+        return *m_data;
     }
 
     const element_type& read() const noexcept {
-        return m_data->value;
+        return *m_data;
     }
 
     friend inline void swap(copy_on_write &x, copy_on_write &y) noexcept {
@@ -479,11 +476,11 @@ public:
 
 private:
     bool unique() const noexcept {
-        return m_data->count == 1;
+        return m_data.use_count() == 1;
     }
 
 private:
-    payload *m_data;
+    std::shared_ptr<T> m_data;
 };
 
 /**
@@ -508,25 +505,6 @@ template <typename T>
 T& cow_write(copy_on_write<T> &v) {
     return v.write();
 }
-
-/**
- * std::make_shared instantiates a lot a templates, and makes both compilation time
- * and executable size far bigger than they need to be. We offer a make_shared
- * equivalent that will avoid most instantiations with the following tradeoffs:
- * - Not exception safe,
- * - Allocates a separate control block, and will thus make the code slower.
- */
-#ifdef SIGSLOT_REDUCE_COMPILE_TIME
-template <typename B, typename D, typename ...Arg>
-inline std::shared_ptr<B> make_shared(Arg && ... arg) {
-    return std::shared_ptr<B>(static_cast<B*>(new D(std::forward<Arg>(arg)...)));
-}
-#else
-template <typename B, typename D, typename ...Arg>
-inline std::shared_ptr<B> make_shared(Arg && ... arg) {
-    return std::static_pointer_cast<B>(std::make_shared<D>(std::forward<Arg>(arg)...));
-}
-#endif
 
 
 // Adapt a signal into a cheap function object, for easy signal chaining
