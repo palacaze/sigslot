@@ -459,8 +459,8 @@ public:
     }
 
     element_type& write() {
-        if (!unique()) {
-            *this = copy_on_write(read());
+        if (auto data_copy = m_data; data_copy.use_count() > 2) {
+            m_data = make_shared<T, T>(*data_copy);
         }
         return *m_data;
     }
@@ -472,11 +472,6 @@ public:
     friend inline void swap(copy_on_write &x, copy_on_write &y) noexcept {
         using std::swap;
         swap(x.m_data, y.m_data);
-    }
-
-private:
-    bool unique() const noexcept {
-        return m_data.use_count() == 1;
     }
 
 private:
