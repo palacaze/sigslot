@@ -528,13 +528,29 @@ inline std::shared_ptr<B> make_shared(Arg && ... arg) {
 }
 #endif
 
+using exception_vector = std::vector<std::exception_ptr>;
+
+class signal_exception_wrapper final : public std::exception {
+public:
+    explicit signal_exception_wrapper(exception_vector &&exceptions) : m_exceptions(
+        std::forward<exception_vector>(exceptions)) {
+    }
+
+    const exception_vector &get_exceptions() const { return m_exceptions; }
+
+private:
+    exception_vector m_exceptions;
+};
 
 // Adapt a signal into a cheap function object, for easy signal chaining
 template <typename SigT>
 struct signal_wrapper {
     template <typename... U>
     void operator()(U && ...u) {
-        (*m_sig)(std::forward<U>(u)...);
+        exception_vector exceptions = (*m_sig)(std::forward<U>(u)...);
+        if (!exceptions.empty()) {
+            throw signal_exception_wrapper(std::move(exceptions));
+        }
     }
 
     SigT *m_sig{};
@@ -1212,10 +1228,12 @@ public:
      * @param a... arguments to emit
      */
     template <typename... U>
-    void operator()(U && ...a) {
+    std::vector<std::exception_ptr> operator()(U && ...a) {
         if (m_block) {
-            return;
+            return {};
         }
+
+        detail::exception_vector caught_exceptions;
 
         // Reference to the slots to execute them out of the lock
         // a copy may occur if another thread writes to it.
@@ -1223,9 +1241,18 @@ public:
 
         for (const auto &group : detail::cow_read(ref)) {
             for (const auto &s : group.slts) {
-                s->operator()(a...);
+                try {
+                    s->operator()(a...);
+                } catch (const detail::signal_exception_wrapper &e) {
+                    const auto &exceptions = e.get_exceptions();
+                    caught_exceptions.insert(caught_exceptions.end(), exceptions.cbegin(), exceptions.cend());
+                } catch (...) {
+                    caught_exceptions.push_back(std::current_exception());
+                }
             }
         }
+
+        return caught_exceptions;
     }
 
     /**
