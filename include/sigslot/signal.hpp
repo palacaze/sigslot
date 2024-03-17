@@ -797,30 +797,6 @@ class slot_base;
 template <typename... T>
 using slot_ptr = std::shared_ptr<slot_base<T...>>;
 
-
-template <typename T>
-struct maybe_mover {
-    template <typename U>
-    static std::remove_reference_t<T>&& apply(U && u) noexcept {
-        return static_cast<std::remove_reference_t<T>&&>(std::forward<U>(u));
-    }
-};
-
-template <typename T>
-struct maybe_mover<T&> {
-    template <typename U>
-    static T& apply(U && u) noexcept {
-        return static_cast<std::remove_reference_t<T>&>(std::forward<U>(u));
-    }
-};
-
-// Conditional move depending on the value type being a reference or not
-template <typename T, typename U>
-decltype(auto) maybe_move(U && u) {
-    return maybe_mover<T>::apply(std::forward<U>(u));
-}
-
-
 /* A base class for slot objects. This base type only depends on slot argument
  * types, it will be used as an element in an intrusive singly-linked list of
  * slots, hence the public next member.
@@ -924,7 +900,7 @@ public:
 
 protected:
     void call_slot(Args ...args) override {
-        func(maybe_move<Args>(args)...);
+        func(std::forward<Args>(args)...);
     }
 
     func_ptr get_callable() const noexcept override {
@@ -956,7 +932,7 @@ public:
 
 protected:
     void call_slot(Args ...args) override {
-        func(conn, maybe_move<Args>(args)...);
+        func(conn, std::forward<Args>(args)...);
     }
 
     func_ptr get_callable() const noexcept override {
@@ -989,7 +965,7 @@ public:
 
 protected:
     void call_slot(Args ...args) override {
-        ((*ptr).*pmf)(maybe_move<Args>(args)...);
+        ((*ptr).*pmf)(std::forward<Args>(args)...);
     }
 
     func_ptr get_callable() const noexcept override {
@@ -1027,7 +1003,7 @@ public:
 
 protected:
     void call_slot(Args ...args) override {
-        ((*ptr).*pmf)(conn, maybe_move<Args>(args)...);
+        ((*ptr).*pmf)(conn, std::forward<Args>(args)...);
     }
 
     func_ptr get_callable() const noexcept override {
@@ -1075,7 +1051,7 @@ protected:
             return;
         }
         if (slot_state::connected()) {
-            func(maybe_move<Args>(args)...);
+            func(std::forward<Args>(args)...);
         }
     }
 
@@ -1125,7 +1101,7 @@ protected:
             return;
         }
         if (slot_state::connected()) {
-            ((*sp).*pmf)(maybe_move<Args>(args)...);
+            ((*sp).*pmf)(std::forward<Args>(args)...);
         }
     }
 
