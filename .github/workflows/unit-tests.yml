@@ -21,7 +21,7 @@ jobs:
         build_type: ['Debug', 'Release']
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Configure sigslot
         run: |
           cmake -E make_directory build
@@ -44,7 +44,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         sanitizer: ['SANITIZE_ADDRESS', 'SANITIZE_THREADS', 'SANITIZE_UNDEFINED']
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Configure sigslot
         run: |
           cmake -E make_directory build
