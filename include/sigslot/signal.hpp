@@ -247,7 +247,7 @@ struct function_traits<T*, std::enable_if_t<trait::is_func_v<T>>> {
     static void ptr(T *t, func_ptr &d) {
         function_traits<T>::ptr(*t, d);
     }
-    
+
     static bool eq(T *t, const func_ptr &d) {
         return function_traits<T>::eq(*t, d);
     }
@@ -1212,7 +1212,7 @@ public:
      * @param a... arguments to emit
      */
     template <typename... U>
-    void operator()(U && ...a) {
+    void operator()(U && ...a) const {
         if (m_block) {
             return;
         }
@@ -1561,7 +1561,7 @@ protected:
 
 private:
     // used to get a reference to the slots for reading
-    inline cow_copy_type<list_type, Lockable> slots_reference() {
+    inline cow_copy_type<list_type, Lockable> slots_reference() const {
         lock_type lock(m_mutex);
         return m_slots;
     }
@@ -1627,7 +1627,7 @@ private:
     }
 
 private:
-    Lockable m_mutex;
+    mutable Lockable m_mutex;
     cow_type<list_type, Lockable> m_slots;
     std::atomic<bool> m_block;
 };
