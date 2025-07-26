@@ -1075,6 +1075,54 @@ private:
     std::decay_t<WeakPtr> ptr;
 };
 
+// Same as above with extended signature
+template <typename Func, typename WeakPtr, typename... Args>
+class slot_tracked_extended final : public slot_base<Args...> {
+public:
+    template <typename F, typename P>
+    constexpr slot_tracked_extended(cleanable &c, F && f, P && p, group_id gid)
+        : slot_base<Args...>(c, gid)
+        , func{std::forward<F>(f)}
+        , ptr{std::forward<P>(p)}
+    {}
+
+    connection conn;
+
+    bool connected() const noexcept override {
+        return !ptr.expired() && slot_state::connected();
+    }
+
+protected:
+    void call_slot(Args ...args) override {
+        auto sp = ptr.lock();
+        if (!sp) {
+            slot_state::disconnect();
+            return;
+        }
+        if (slot_state::connected()) {
+            func(conn, args...);
+        }
+    }
+
+    func_ptr get_callable() const noexcept override {
+        return get_function_ptr(func);
+    }
+
+    obj_ptr get_object() const noexcept override {
+        return get_object_ptr(ptr);
+    }
+
+#ifdef SIGSLOT_RTTI_ENABLED
+    const std::type_info& get_callable_type() const noexcept override {
+        return typeid(func);
+    }
+#endif
+
+private:
+    std::decay_t<Func> func;
+    std::decay_t<WeakPtr> ptr;
+};
+
 /*
  * An implementation of a slot as a pointer over member function, that tracks
  * the life of a supplied object through a weak pointer in order to automatically
@@ -1103,6 +1151,54 @@ protected:
         }
         if (slot_state::connected()) {
             ((*sp).*pmf)(args...);
+        }
+    }
+
+    func_ptr get_callable() const noexcept override {
+        return get_function_ptr(pmf);
+    }
+
+    obj_ptr get_object() const noexcept override {
+        return get_object_ptr(ptr);
+    }
+
+#ifdef SIGSLOT_RTTI_ENABLED
+    const std::type_info& get_callable_type() const noexcept override {
+        return typeid(pmf);
+    }
+#endif
+
+private:
+    std::decay_t<Pmf> pmf;
+    std::decay_t<WeakPtr> ptr;
+};
+
+// same as above with extended signature
+template <typename Pmf, typename WeakPtr, typename... Args>
+class slot_pmf_tracked_extended final : public slot_base<Args...> {
+public:
+    template <typename F, typename P>
+    constexpr slot_pmf_tracked_extended(cleanable &c, F && f, P && p, group_id gid)
+        : slot_base<Args...>(c, gid)
+        , pmf{std::forward<F>(f)}
+        , ptr{std::forward<P>(p)}
+    {}
+
+    connection conn;
+
+    bool connected() const noexcept override {
+        return !ptr.expired() && slot_state::connected();
+    }
+
+protected:
+    void call_slot(Args ...args) override {
+        auto sp = ptr.lock();
+        if (!sp) {
+            slot_state::disconnect();
+            return;
+        }
+        if (slot_state::connected()) {
+            ((*sp).*pmf)(conn, args...);
         }
     }
 
@@ -1229,7 +1325,7 @@ public:
     }
 
     /**
-     * Connect a callable of compatible arguments
+     * Connect a callable of compatible arguments.
      *
      * Effect: Creates and stores a new slot responsible for executing the
      *         supplied callable for every subsequent signal emission.
@@ -1250,10 +1346,10 @@ public:
     }
 
     /**
-     * Connect a callable with an additional connection argument
+     * Connect a callable with an additional connection argument.
      *
-     * The callable's first argument must be of type connection. This overload
-     * the callable to manage it's own connection through this argument.
+     * The callable's first argument must be of type connection. The callable
+     * can manage its own connection through this argument.
      *
      * @param c a callable
      * @param gid an identifier that can be used to order slot execution
@@ -1272,7 +1368,7 @@ public:
 
     /**
      * Overload of connect for pointers over member functions derived from
-     * observer
+     * observer.
      *
      * @param pmf a pointer over member function
      * @param ptr an object pointer derived from observer
@@ -1292,7 +1388,7 @@ public:
     }
 
     /**
-     * Overload of connect for pointers over member functions
+     * Overload of connect for pointers over member functions.
      *
      * @param pmf a pointer over member function
      * @param ptr an object pointer
@@ -1312,7 +1408,11 @@ public:
     }
 
     /**
-     * Overload  of connect for pointer over member functions and
+     * Overload of connect for pointer over member functions and additional
+     * connection argument.
+     *
+     * The callable's first argument must be of type connection. The callable
+     * can manage its own connection through this argument.
      *
      * @param pmf a pointer over member function
      * @param ptr an object pointer
@@ -1332,7 +1432,7 @@ public:
     }
 
     /**
-     * Overload of connect for lifetime object tracking and automatic disconnection
+     * Overload of connect for lifetime object tracking and automatic disconnection.
      *
      * Ptr must be convertible to an object following a loose form of weak pointer
      * concept, by implementing the ADL-detected conversion function to_weak().
@@ -1341,7 +1441,7 @@ public:
      * trackable pointer of that class.
      *
      * Note: only weak references are stored, a slot does not extend the lifetime
-     * of a suppied object.
+     * of a supplied object.
      *
      * @param pmf a pointer over member function
      * @param ptr a trackable object pointer
@@ -1363,6 +1463,41 @@ public:
 
     /**
      * Overload of connect for lifetime object tracking and automatic disconnection
+     * with additional connection management.
+     *
+     * The callable's first argument must be of type connection. The callable
+     * can manage its own connection through this argument.
+     *
+     * Ptr must be convertible to an object following a loose form of weak pointer
+     * concept, by implementing the ADL-detected conversion function to_weak().
+     *
+     * This overload covers the case of a pointer over member function and a
+     * trackable pointer of that class.
+     *
+     * Note: only weak references are stored, a slot does not extend the lifetime
+     * of a supplied object.
+     *
+     * @param pmf a pointer over member function
+     * @param ptr a trackable object pointer
+     * @param gid an identifier that can be used to order slot execution
+     * @return a connection object that can be used to interact with the slot
+     */
+    template <typename Pmf, typename Ptr>
+    std::enable_if_t<!trait::is_callable_v<ext_arg_list, Pmf> &&
+                     trait::is_weak_ptr_compatible_v<Ptr>, connection>
+    connect_extended(Pmf && pmf, Ptr && ptr, group_id gid = 0) {
+        using trait::to_weak;
+        auto w = to_weak(std::forward<Ptr>(ptr));
+        using slot_t = detail::slot_pmf_tracked_extended<Pmf, decltype(w), T...>;
+        auto s = make_slot<slot_t>(std::forward<Pmf>(pmf), w, gid);
+        connection conn(s);
+        std::static_pointer_cast<slot_t>(s)->conn = conn;
+        add_slot(std::move(s));
+        return conn;
+    }
+
+    /**
+     * Overload of connect for lifetime object tracking and automatic disconnection.
      *
      * Trackable must be convertible to an object following a loose form of weak
      * pointer concept, by implementing the ADL-detected conversion function to_weak().
@@ -1371,7 +1506,7 @@ public:
      * object.
      *
      * Note: only weak references are stored, a slot does not extend the lifetime
-     * of a suppied object.
+     * of a supplied object.
      *
      * @param c a callable
      * @param ptr a trackable object pointer
@@ -1392,8 +1527,43 @@ public:
     }
 
     /**
-     * Creates a connection whose duration is tied to the return object
-     * Use the same semantics as connect
+     * Overload of connect for lifetime object tracking and automatic disconnection
+     * with additional connection management.
+     *
+     * The callable's first argument must be of type connection. The callable
+     * can manage its own connection through this argument.
+     *
+     * Trackable must be convertible to an object following a loose form of weak
+     * pointer concept, by implementing the ADL-detected conversion function to_weak().
+     *
+     * This overload covers the case of a standalone callable and unrelated trackable
+     * object.
+     *
+     * Note: only weak references are stored, a slot does not extend the lifetime
+     * of a suppied object.
+     *
+     * @param c a callable
+     * @param ptr a trackable object pointer
+     * @param gid an identifier that can be used to order slot execution
+     * @return a connection object that can be used to interact with the slot
+     */
+    template <typename Callable, typename Trackable>
+    std::enable_if_t<trait::is_callable_v<ext_arg_list, Callable> &&
+                     trait::is_weak_ptr_compatible_v<Trackable>, connection>
+    connect_extended(Callable && c, Trackable && ptr, group_id gid = 0) {
+        using trait::to_weak;
+        auto w = to_weak(std::forward<Trackable>(ptr));
+        using slot_t = detail::slot_tracked_extended<Callable, decltype(w), T...>;
+        auto s = make_slot<slot_t>(std::forward<Callable>(c), w, gid);
+        connection conn(s);
+        std::static_pointer_cast<slot_t>(s)->conn = conn;
+        add_slot(std::move(s));
+        return conn;
+    }
+
+    /**
+     * Creates a connection whose duration is tied to the return object.
+     * Uses the same semantics as connect
      */
     template <typename... CallArgs>
     scoped_connection connect_scoped(CallArgs && ...args) {

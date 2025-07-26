@@ -49,6 +49,23 @@ void test_pmf_connection() {
     assert(sum == 1);
 }
 
+void test_tracked_pmf_connection() {
+    sum = 0;
+    sigslot::signal<int> sig;
+    auto p = std::make_shared<s>();
+    sig.connect_extended(&s::f, p);
+
+    sig(1);
+    assert(sum == 1);
+    sig(1);
+    assert(sum == 1);
+
+    sig.connect_extended(&s::f, p);
+    p.reset();
+    sig(1);
+    assert(sum == 1);
+}
+
 void test_function_object_connection() {
     sum = 0;
     sigslot::signal<int> sig;
@@ -56,6 +73,25 @@ void test_function_object_connection() {
 
     sig(1);
     assert(sum == 1);
+    sig(1);
+    assert(sum == 1);
+}
+
+void test_tracked_connection() {
+    sum = 0;
+    struct dummy {};
+    auto d = std::make_shared<dummy>();
+
+    sigslot::signal<int> sig;
+    sig.connect_extended(o{}, d);
+
+    sig(1);
+    assert(sum == 1);
+    sig(1);
+    assert(sum == 1);
+
+    sig.connect_extended(o{}, d);
+    d.reset();
     sig(1);
     assert(sum == 1);
 }
